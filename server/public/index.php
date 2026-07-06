@@ -154,13 +154,14 @@ switch ($path) {
         require $views . '/account.php';
         break;
     case '/admin':
+    case '/admin/projects':
         if ($me['role'] !== 'admin') { http_response_code(403); exit('Forbidden'); }
         require $views . '/admin.php';
         break;
     case '/admin/users':
-        header('Location: /admin#users'); exit;
-    case '/admin/projects':
-        header('Location: /admin'); exit;
+        if ($me['role'] !== 'admin') { http_response_code(403); exit('Forbidden'); }
+        require $views . '/admin_users.php';
+        break;
     default:
         http_response_code(404);
         exit('Not found');

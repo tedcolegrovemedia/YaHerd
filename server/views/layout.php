@@ -82,3 +82,14 @@ function layout_bottom(): void {
 function status_label(string $s): string {
     return ['queued' => 'Queued', 'working_on' => 'Working on', 'complete' => 'Complete'][$s] ?? $s;
 }
+
+// Sub-navigation shown on the admin pages. $current is 'projects' or 'users'.
+function admin_tabs(string $current): void {
+    $tabs = ['projects' => ['/admin', 'Projects'], 'users' => ['/admin/users', 'Users']];
+    echo '<nav class="subtabs" aria-label="Admin sections">';
+    foreach ($tabs as $key => [$href, $label]) {
+        $attr = $key === $current ? ' class="active" aria-current="page"' : '';
+        echo '<a href="' . $href . '"' . $attr . '>' . e($label) . '</a>';
+    }
+    echo '</nav>';
+}

@@ -276,11 +276,16 @@ dl dd code { font-family: var(--mono); font-size: 12px; background: var(--surfac
 /* ==========================================================================
    Admin
    ========================================================================== */
-.admin-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
-@media (max-width: 1000px) { .admin-cols { grid-template-columns: 1fr; } }
-.admin-cols > section { min-width: 0; }   /* let 1fr tracks shrink below content */
-.admin-cols h2 { margin: 0 0 16px; }
-.admin-cols h3 { margin: 28px 0 12px; }
+.admin-page { max-width: 760px; }
+.admin-page h3 { margin: 32px 0 12px; }
+
+.subtabs { display: flex; gap: 4px; margin: -6px 0 26px; border-bottom: 1px solid var(--border); }
+.subtabs a {
+  padding: 9px 14px; font-weight: 550; font-size: 14px; color: var(--ink-2);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.subtabs a:hover { color: var(--ink); text-decoration: none; }
+.subtabs a.active { color: var(--accent); border-bottom-color: var(--accent); }
 
 .user-list { display: flex; flex-direction: column; gap: 10px; }
 .user-row {
