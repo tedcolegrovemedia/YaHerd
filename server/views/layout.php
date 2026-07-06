@@ -60,8 +60,20 @@ function layout_top(string $title, ?array $me = null): void {
 <?php
 }
 
+const EXTENSION_DOWNLOAD_URL = 'https://github.com/tedcolegrovemedia/YaHerd/releases/latest/download/YaHerd-extension.zip';
+
 function layout_bottom(): void {
     ?></main>
+<footer class="site-footer">
+  <a class="ext-download" href="<?= EXTENSION_DOWNLOAD_URL ?>">
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+      <path d="M12 3v11m0 0 4-4m-4 4-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    Download the Chrome extension
+  </a>
+  <span class="footer-hint">Unzip, then load it at <code>chrome://extensions</code> → Developer mode → Load unpacked.</span>
+</footer>
 <script src="/assets/dashboard.js?v=<?= filemtime(dirname(__DIR__) . '/public/assets/dashboard.js') ?>"></script>
 </body>
 </html><?php

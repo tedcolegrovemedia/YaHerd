@@ -47,6 +47,9 @@
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   font-family: var(--font);
   font-size: 15px;
   line-height: 1.5;
@@ -55,7 +58,7 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
-main { max-width: 1160px; margin: 0 auto; padding: 32px 24px 72px; }
+main { flex: 1 0 auto; width: 100%; max-width: 1160px; margin: 0 auto; padding: 32px 24px 48px; }
 
 h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin: 0 0 20px; }
 h2 { font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
@@ -341,6 +344,26 @@ label.check input { width: auto; margin: 0; }
 .assign-opt { display: flex; flex-direction: column; padding: 8px 12px; cursor: pointer; border-radius: 6px; }
 .assign-opt small { color: var(--ink-2); font-size: 12px; }
 .assign-opt:hover, .assign-opt.active { background: var(--accent-weak); }
+
+/* ==========================================================================
+   Footer
+   ========================================================================== */
+.site-footer {
+  flex: none;
+  border-top: 1px solid var(--border); background: var(--surface);
+  padding: 18px 24px;
+  display: flex; align-items: center; justify-content: center; gap: 8px 16px; flex-wrap: wrap;
+}
+.ext-download {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  padding: 8px 14px; font-weight: 550; font-size: 14px;
+}
+.ext-download:hover { text-decoration: none; background: var(--accent-weak); color: var(--accent-weak-ink); border-color: var(--accent); }
+.ext-download svg { color: var(--accent); flex: none; }
+.footer-hint { color: var(--ink-2); font-size: 13px; }
+.footer-hint code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
 
 /* ==========================================================================
    Toasts
