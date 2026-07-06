@@ -149,14 +149,14 @@ switch ($path) {
     case '/task':
         require $views . '/task_detail.php';
         break;
+    case '/admin':
+        if ($me['role'] !== 'admin') { http_response_code(403); exit('Forbidden'); }
+        require $views . '/admin.php';
+        break;
     case '/admin/users':
-        if ($me['role'] !== 'admin') { http_response_code(403); exit('Forbidden'); }
-        require $views . '/admin_users.php';
-        break;
+        header('Location: /admin#users'); exit;
     case '/admin/projects':
-        if ($me['role'] !== 'admin') { http_response_code(403); exit('Forbidden'); }
-        require $views . '/admin_projects.php';
-        break;
+        header('Location: /admin'); exit;
     default:
         http_response_code(404);
         exit('Not found');

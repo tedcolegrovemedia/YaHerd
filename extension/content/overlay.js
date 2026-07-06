@@ -270,6 +270,19 @@
       const ta = el('textarea');
       ta.placeholder = 'Describe the issue or feedback…';
       bubble.appendChild(ta);
+
+      // Optional assignee, picked at creation time.
+      const assignRow = el('div', 'wc-row');
+      assignRow.style.justifyContent = 'flex-start';
+      assignRow.appendChild(el('span', 'wc-meta', 'Assign to'));
+      const assignSel = el('select', 'wc-status');
+      assignSel.appendChild(new Option('Nobody yet', ''));
+      assignRow.appendChild(assignSel);
+      bubble.appendChild(assignRow);
+      this.getMembers().then((members) => {
+        for (const m of members) assignSel.appendChild(new Option(m.display_name, String(m.id)));
+      }).catch(() => {});
+
       const err = el('div', 'wc-error');
       bubble.appendChild(err);
       const row = el('div', 'wc-row');
@@ -292,6 +305,7 @@
           project_id: this.deps.project.id,
           page_url: location.href,
           body,
+          assignee_id: assignSel.value || '',
           ...anchor,
         };
         // Hide our UI so it doesn't appear in the screenshot; wait two frames

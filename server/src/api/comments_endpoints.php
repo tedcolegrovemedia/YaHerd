@@ -81,16 +81,28 @@ route('POST', '#^/api/comments$#', function () {
         json_out(['error' => 'page_url must be an http(s) URL'], 422);
     }
 
+    $assigneeId = null;
+    if (($_POST['assignee_id'] ?? '') !== '') {
+        $assigneeId = (int)$_POST['assignee_id'];
+        $stmt = db()->prepare('SELECT * FROM users WHERE id = ? AND is_active = 1');
+        $stmt->execute([$assigneeId]);
+        $target = $stmt->fetch();
+        if (!$target || !is_project_member($target, $projectId)) {
+            json_out(['error' => 'assignee must be an active member of this project'], 422);
+        }
+    }
+
     $stmt = db()->prepare(
         'INSERT INTO comments
-           (project_id, author_id, page_url, page_path, body,
+           (project_id, author_id, assignee_id, page_url, page_path, body,
             anchor_selector, anchor_offset_x, anchor_offset_y, anchor_text,
             fallback_x, fallback_y, viewport_w)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         $projectId,
         (int)$u['id'],
+        $assigneeId,
         substr($pageUrl, 0, 1000),
         path_of($pageUrl),
         $body,
@@ -123,6 +135,7 @@ route('POST', '#^/api/comments$#', function () {
 
     $c = fetch_comment_or_404($id);
     $c['author_name'] = $u['display_name'];
+    if ($assigneeId !== null) $c['assignee_name'] = $target['display_name'];
     json_out(['comment' => comment_row_out($c)], 201);
 });
 

@@ -7,7 +7,7 @@ function layout_top(string $title, ?array $me = null): void {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= e($title) ?> — YaHerd</title>
-<link rel="stylesheet" href="/assets/dashboard.css">
+<link rel="stylesheet" href="/assets/dashboard.css?v=<?= filemtime(dirname(__DIR__) . '/public/assets/dashboard.css') ?>">
 </head>
 <body>
 <header class="topbar">
@@ -16,13 +16,7 @@ function layout_top(string $title, ?array $me = null): void {
   <nav>
     <a href="/">Projects</a>
     <?php if ($me['role'] === 'admin'): ?>
-      <div class="dropdown">
-        <a href="/admin/projects" class="dropdown-label">Admin ▾</a>
-        <div class="dropdown-menu">
-          <a href="/admin/projects">Projects</a>
-          <a href="/admin/users">Users</a>
-        </div>
-      </div>
+      <a href="/admin">Admin</a>
     <?php endif; ?>
   </nav>
   <div class="userbox">
@@ -37,7 +31,7 @@ function layout_top(string $title, ?array $me = null): void {
 
 function layout_bottom(): void {
     ?></main>
-<script src="/assets/dashboard.js"></script>
+<script src="/assets/dashboard.js?v=<?= filemtime(dirname(__DIR__) . '/public/assets/dashboard.js') ?>"></script>
 </body>
 </html><?php
 }
