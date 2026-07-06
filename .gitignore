@@ -1,0 +1,15 @@
+# Local config with real credentials — never commit
+server/src/config.php
+deploy/.env
+
+# Uploaded screenshots
+server/storage/screenshots/*
+!server/storage/screenshots/.gitkeep
+
+# Packaged extension builds
+dist/
+
+# Tooling / OS
+.claude/
+.DS_Store
+*.log
