@@ -14,9 +14,8 @@ async function api(method, path, body) {
 function toast(msg, isError) {
   const t = document.createElement('div');
   t.textContent = msg;
-  t.style.cssText =
-    'position:fixed;bottom:20px;right:20px;padding:10px 16px;border-radius:8px;color:#fff;z-index:99;' +
-    'font-size:14px;background:' + (isError ? '#dc2626' : '#10b981');
+  t.className = 'toast ' + (isError ? 'toast-err' : 'toast-ok');
+  t.setAttribute('role', 'status');
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2500);
 }

@@ -70,6 +70,7 @@ layout_top('Admin', $me);
 
 <section id="users">
   <h2>Users</h2>
+  <div class="table-wrap">
   <table class="admin-table">
     <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Reset password</th></tr></thead>
     <tbody>
@@ -97,6 +98,7 @@ layout_top('Admin', $me);
     <?php endforeach; ?>
     </tbody>
   </table>
+  </div>
 
   <h3>Create user</h3>
   <form id="create-user-form" class="stack">
