@@ -5,8 +5,16 @@ route('POST', '#^/api/login$#', function () {
     if (empty($in['email']) || empty($in['password'])) {
         json_out(['error' => 'email and password required'], 422);
     }
+    $ip = client_ip();
+    if (login_throttled($ip)) {
+        json_out(['error' => 'too many failed attempts — try again in 10 minutes'], 429);
+    }
     $u = verify_credentials($in['email'], $in['password']);
-    if (!$u) json_out(['error' => 'invalid credentials'], 401);
+    if (!$u) {
+        record_login_failure($ip);
+        json_out(['error' => 'invalid credentials'], 401);
+    }
+    clear_login_failures($ip);
     $token = issue_token((int)$u['id'], $in['label'] ?? 'extension');
     json_out(['token' => $token, 'user' => public_user($u)]);
 });

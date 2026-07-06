@@ -22,7 +22,23 @@ require $src . '/helpers.php';
 require $src . '/auth.php';
 require $src . '/router.php';
 
+// Harden the session cookie. Secure flag follows the original protocol when
+// behind a TLS-terminating proxy/tunnel (Cloudflare sets X-Forwarded-Proto).
+$isHttps = !empty($_SERVER['HTTPS'])
+    || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path'     => '/',
+    'secure'   => $isHttps,
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
 session_start();
+
+header('X-Frame-Options: DENY');
+header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: same-origin');
+
 $method = $_SERVER['REQUEST_METHOD'];
 
 // ---------- API ----------
@@ -31,6 +47,23 @@ if (str_starts_with($path, '/api/')) {
     header('Access-Control-Allow-Methods: GET, POST, PATCH, PUT, DELETE, OPTIONS');
     header('Access-Control-Allow-Headers: Authorization, Content-Type');
     if ($method === 'OPTIONS') { http_response_code(204); exit; }
+
+    // CSRF guard: a state-changing API call that would ride on the session
+    // cookie (no Bearer header) must come from our own origin. Bearer-token
+    // requests (the extension) are unaffected; cookies aren't sent by curl.
+    $usesBearer = (bool)preg_match('/^Bearer\s/i', $_SERVER['HTTP_AUTHORIZATION'] ?? '');
+    if (!in_array($method, ['GET', 'OPTIONS'], true)
+        && !$usesBearer
+        && !empty($_SESSION['user_id'])
+        && !empty($_SERVER['HTTP_ORIGIN'])) {
+        $originHost = parse_url($_SERVER['HTTP_ORIGIN'], PHP_URL_HOST) ?? '';
+        $originPort = parse_url($_SERVER['HTTP_ORIGIN'], PHP_URL_PORT);
+        $expected   = $_SERVER['HTTP_HOST'] ?? '';
+        $actual     = $originHost . ($originPort ? ':' . $originPort : '');
+        if (strcasecmp($actual, $expected) !== 0) {
+            json_out(['error' => 'cross-origin request rejected'], 403);
+        }
+    }
 
     require $src . '/api/auth_endpoints.php';
     require $src . '/api/users_endpoints.php';
@@ -75,13 +108,20 @@ if ($userCount === 0) {
 // Login / logout
 if ($path === '/login') {
     if ($method === 'POST') {
-        $u = verify_credentials($_POST['email'] ?? '', $_POST['password'] ?? '');
-        if ($u) {
-            session_regenerate_id(true);
-            $_SESSION['user_id'] = (int)$u['id'];
-            header('Location: /'); exit;
+        $ip = client_ip();
+        if (login_throttled($ip)) {
+            $login_error = 'Too many failed attempts — try again in 10 minutes.';
+        } else {
+            $u = verify_credentials($_POST['email'] ?? '', $_POST['password'] ?? '');
+            if ($u) {
+                clear_login_failures($ip);
+                session_regenerate_id(true);
+                $_SESSION['user_id'] = (int)$u['id'];
+                header('Location: /'); exit;
+            }
+            record_login_failure($ip);
+            $login_error = 'Invalid email or password.';
         }
-        $login_error = 'Invalid email or password.';
     }
     require $views . '/login.php';
     exit;

@@ -38,17 +38,31 @@ async function render() {
   $('who').textContent = status.user ? `${status.user.display_name} (${status.user.email})` : '';
   $('dashboard-link').href = status.serverUrl;
 
+  // Build status DOM with textContent — never inject server data as HTML.
   const box = $('site-status');
   const toggleRow = $('toggle-row');
+  box.textContent = '';
+  const span = (cls, text) => {
+    const s = document.createElement('span');
+    s.className = cls;
+    s.textContent = text;
+    return s;
+  };
   if (!origin) {
-    box.innerHTML = '<span class="no">This page can’t be commented on.</span>';
+    box.appendChild(span('no', 'This page can’t be commented on.'));
     toggleRow.classList.add('hidden');
   } else if (status.project) {
-    box.innerHTML = `<span class="ok">Active:</span> ${status.project.name}<br><span class="no">${origin}</span>`;
+    box.appendChild(span('ok', 'Active: '));
+    box.appendChild(document.createTextNode(status.project.name));
+    box.appendChild(document.createElement('br'));
+    box.appendChild(span('no', origin));
     toggleRow.classList.remove('hidden');
     $('site-toggle').checked = !status.disabled;
   } else {
-    box.innerHTML = `<span class="no">${origin}<br>is not part of any of your projects.</span>`;
+    const s = span('no', origin);
+    s.appendChild(document.createElement('br'));
+    s.appendChild(document.createTextNode('is not part of any of your projects.'));
+    box.appendChild(s);
     toggleRow.classList.add('hidden');
   }
 }

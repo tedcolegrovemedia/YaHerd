@@ -44,7 +44,12 @@ route('PATCH', '#^/api/users/(\d+)$#', function ($id) {
         if (strlen($in['password']) < 8) json_out(['error' => 'password must be at least 8 characters'], 422);
         $fields[] = 'password_hash = ?'; $params[] = password_hash($in['password'], PASSWORD_DEFAULT);
     }
-    if (isset($in['role'])) { $fields[] = 'role = ?'; $params[] = $in['role'] === 'admin' ? 'admin' : 'user'; }
+    if (isset($in['role'])) {
+        if ((int)$id === (int)$admin['id'] && $in['role'] !== 'admin') {
+            json_out(['error' => 'cannot remove your own admin role'], 422);
+        }
+        $fields[] = 'role = ?'; $params[] = $in['role'] === 'admin' ? 'admin' : 'user';
+    }
     if (isset($in['is_active'])) {
         if ((int)$id === (int)$admin['id'] && !$in['is_active']) json_out(['error' => 'cannot deactivate yourself'], 422);
         $fields[] = 'is_active = ?'; $params[] = $in['is_active'] ? 1 : 0;

@@ -70,6 +70,12 @@ route('POST', '#^/api/comments$#', function () {
     $pageUrl = trim($_POST['page_url'] ?? '');
     $body    = trim($_POST['body'] ?? '');
     if ($pageUrl === '' || $body === '') json_out(['error' => 'page_url and body required'], 422);
+    // page_url is rendered as a clickable link in the dashboard — never allow
+    // javascript:/data: or other non-web schemes.
+    $scheme = strtolower((string)parse_url($pageUrl, PHP_URL_SCHEME));
+    if (!in_array($scheme, ['http', 'https'], true)) {
+        json_out(['error' => 'page_url must be an http(s) URL'], 422);
+    }
 
     $stmt = db()->prepare(
         'INSERT INTO comments

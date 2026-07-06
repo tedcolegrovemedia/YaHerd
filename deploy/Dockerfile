@@ -1,6 +1,7 @@
 FROM php:8.3-apache
 
-RUN docker-php-ext-install pdo_mysql && a2enmod rewrite
+RUN docker-php-ext-install pdo_mysql && a2enmod rewrite \
+    && mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 
 COPY deploy/apache.conf /etc/apache2/sites-available/000-default.conf
 

@@ -65,6 +65,13 @@ CREATE TABLE comments (
   FOREIGN KEY (author_id)  REFERENCES users(id)
 ) ENGINE=InnoDB;
 
+CREATE TABLE login_attempts (
+  id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  ip         VARCHAR(45) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_ip_time (ip, created_at)
+) ENGINE=InnoDB;
+
 CREATE TABLE comment_replies (
   id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   comment_id INT UNSIGNED NOT NULL,
