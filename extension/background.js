@@ -25,6 +25,9 @@ async function apiFetch(state, method, path, { json, formData } = {}) {
   const res = await fetch(state.serverUrl.replace(/\/$/, '') + path, {
     method,
     headers,
+    // Never ride on dashboard session cookies — the extension is pure
+    // bearer-token auth (also keeps the server's CSRF guard out of play).
+    credentials: 'omit',
     body: formData !== undefined ? formData : json !== undefined ? JSON.stringify(json) : undefined,
   });
   let data = {};

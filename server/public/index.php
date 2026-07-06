@@ -56,11 +56,15 @@ if (str_starts_with($path, '/api/')) {
         && !$usesBearer
         && !empty($_SESSION['user_id'])
         && !empty($_SERVER['HTTP_ORIGIN'])) {
+        $originScheme = strtolower((string)parse_url($_SERVER['HTTP_ORIGIN'], PHP_URL_SCHEME));
         $originHost = parse_url($_SERVER['HTTP_ORIGIN'], PHP_URL_HOST) ?? '';
         $originPort = parse_url($_SERVER['HTTP_ORIGIN'], PHP_URL_PORT);
         $expected   = $_SERVER['HTTP_HOST'] ?? '';
         $actual     = $originHost . ($originPort ? ':' . $originPort : '');
-        if (strcasecmp($actual, $expected) !== 0) {
+        // Browser extensions (chrome-extension:// etc.) are not web pages —
+        // a hostile website can never send that Origin, so they're exempt.
+        $isExtension = str_ends_with($originScheme, 'extension');
+        if (!$isExtension && strcasecmp($actual, $expected) !== 0) {
             json_out(['error' => 'cross-origin request rejected'], 403);
         }
     }

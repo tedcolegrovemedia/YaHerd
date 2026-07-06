@@ -16,8 +16,13 @@ function layout_top(string $title, ?array $me = null): void {
   <nav>
     <a href="/">Projects</a>
     <?php if ($me['role'] === 'admin'): ?>
-      <a href="/admin/projects">Projects</a>
-      <a href="/admin/users">Users</a>
+      <div class="dropdown">
+        <a href="/admin/projects" class="dropdown-label">Admin ▾</a>
+        <div class="dropdown-menu">
+          <a href="/admin/projects">Projects</a>
+          <a href="/admin/users">Users</a>
+        </div>
+      </div>
     <?php endif; ?>
   </nav>
   <div class="userbox">
