@@ -64,6 +64,7 @@
         raf = requestAnimationFrame(() => {
           raf = 0;
           this.positionPins();
+          this.repositionBubble();
         });
       };
       window.addEventListener('scroll', reposition, { passive: true, capture: true });
@@ -255,11 +256,53 @@
     closeBubble() {
       if (this.bubble) { this.bubble.remove(); this.bubble = null; }
       if (this.provisionalPin) { this.provisionalPin.remove(); this.provisionalPin = null; }
+      this.composerCtx = null;
+      this.detailComment = null;
+    }
+
+    // Current viewport coords of the spot the composer is pinned to.
+    composerPos() {
+      const ctx = this.composerCtx;
+      if (!ctx) return null;
+      if (ctx.target && ctx.target.isConnected) {
+        const r = ctx.target.getBoundingClientRect();
+        if (r.width || r.height) {
+          return { x: r.left + ctx.fx * r.width, y: r.top + ctx.fy * r.height };
+        }
+      }
+      // Element gone: fall back to the page coords captured at click time.
+      return { x: ctx.pageX - window.scrollX, y: ctx.pageY - window.scrollY };
+    }
+
+    // Keep any open bubble glued to its pin through scrolls, resizes and reflows.
+    repositionBubble() {
+      if (!this.bubble) return;
+      if (this.composerCtx) {
+        const pos = this.composerPos();
+        if (this.provisionalPin) {
+          this.provisionalPin.style.left = pos.x + 'px';
+          this.provisionalPin.style.top = pos.y + 'px';
+        }
+        this.placeBubble(this.bubble, pos.x, pos.y);
+      } else if (this.detailComment) {
+        const pos = window.WCAnchor.resolvePin(this.detailComment);
+        this.placeBubble(this.bubble, pos.x, pos.y);
+      }
     }
 
     // ---------- composer ----------
     openComposer(target, cx, cy) {
       this.closeBubble();
+      // Remember the spot as a fraction of the clicked element so the
+      // provisional pin and bubble survive scrolling, resizing and reflows.
+      const rect = target.getBoundingClientRect();
+      this.composerCtx = {
+        target,
+        fx: rect.width ? (cx - rect.left) / rect.width : 0.5,
+        fy: rect.height ? (cy - rect.top) / rect.height : 0.5,
+        pageX: cx + window.scrollX,
+        pageY: cy + window.scrollY,
+      };
       const pin = el('div', 'wc-pin wc-provisional', '+');
       pin.style.left = cx + 'px';
       pin.style.top = cy + 'px';
@@ -300,7 +343,16 @@
         if (!body) { err.textContent = 'Write something first.'; return; }
         saveBtn.disabled = true;
         saveBtn.textContent = 'Saving…';
-        const anchor = window.WCAnchor.describePin(target, cx, cy);
+        // Use the pin's CURRENT position — the user may have scrolled or
+        // resized while typing. If it left the viewport, bring it back so
+        // the screenshot shows the right spot.
+        let pos = this.composerPos();
+        if (pos.y < 0 || pos.y > innerHeight || pos.x < 0 || pos.x > innerWidth) {
+          if (target.isConnected) target.scrollIntoView({ block: 'center' });
+          await new Promise((r) => setTimeout(r, 350));
+          pos = this.composerPos();
+        }
+        const anchor = window.WCAnchor.describePin(target, pos.x, pos.y);
         const fields = {
           project_id: this.deps.project.id,
           page_url: location.href,
@@ -314,8 +366,8 @@
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         try {
           const data = await this.deps.createComment(fields, {
-            vx: cx,
-            vy: cy,
+            vx: pos.x,
+            vy: pos.y,
             dpr: window.devicePixelRatio || 1,
           });
           this.host.style.visibility = '';
@@ -335,6 +387,7 @@
     // ---------- detail ----------
     async openDetail(c, pinEl) {
       this.closeBubble();
+      this.detailComment = c; // repositionBubble() keeps us glued to the pin
       const pos = window.WCAnchor.resolvePin(c);
       const bubble = el('div', 'wc-bubble');
       const idx = this.comments.indexOf(c) + 1;
