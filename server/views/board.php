@@ -18,6 +18,7 @@ $project = null;
 foreach ($projects as $p) if ((int)$p['id'] === $projectId) $project = $p;
 
 $byStatus = ['queued' => [], 'working_on' => [], 'complete' => []];
+$members = [];
 if ($project) {
     $stmt = db()->prepare(
         'SELECT c.*, u.display_name AS author_name,
@@ -27,7 +28,27 @@ if ($project) {
     );
     $stmt->execute([$projectId]);
     foreach ($stmt->fetchAll() as $c) $byStatus[$c['status']][] = $c;
+
+    $stmt = db()->prepare(
+        "SELECT DISTINCT u.id, u.display_name FROM users u
+         LEFT JOIN project_users pu ON pu.user_id = u.id AND pu.project_id = ?
+         WHERE u.is_active = 1 AND (pu.project_id IS NOT NULL OR u.role = 'admin')
+         ORDER BY u.display_name"
+    );
+    $stmt->execute([$projectId]);
+    $members = $stmt->fetchAll();
 }
+
+function assignee_select(array $c, array $members): void { ?>
+  <select class="assignee-select" data-comment="<?= (int)$c['id'] ?>" title="Assign to">
+    <option value="">Unassigned</option>
+    <?php foreach ($members as $m): ?>
+      <option value="<?= (int)$m['id'] ?>" <?= (int)$m['id'] === (int)($c['assignee_id'] ?? 0) ? 'selected' : '' ?>>
+        <?= e($m['display_name']) ?>
+      </option>
+    <?php endforeach; ?>
+  </select>
+<?php }
 
 layout_top('Board', $me);
 ?>
@@ -72,6 +93,7 @@ layout_top('Board', $me);
                     title="View screenshot">📷</button>
         <?php endif; ?>
       </p>
+      <p class="assignee-row">👤 <?php assignee_select($c, $members); ?></p>
     </article>
     <?php endforeach; ?>
     </div>

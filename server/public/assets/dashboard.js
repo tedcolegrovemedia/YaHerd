@@ -110,6 +110,11 @@ document.addEventListener('change', async (ev) => {
       await api('PATCH', `/api/comments/${el.dataset.comment}/status`, { status: el.value });
       toast('Status updated');
       if (document.querySelector('.board')) location.reload();
+    } else if (el.matches('.assignee-select')) {
+      await api('PATCH', `/api/comments/${el.dataset.comment}/assignee`, {
+        user_id: el.value ? +el.value : null,
+      });
+      toast(el.value ? 'Assigned to ' + el.options[el.selectedIndex].text.trim() : 'Unassigned');
     } else if (el.matches('.user-role')) {
       await api('PATCH', `/api/users/${el.dataset.user}`, { role: el.value });
       toast('Role updated');

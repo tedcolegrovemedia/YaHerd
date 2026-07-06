@@ -21,6 +21,23 @@ route('GET', '#^/api/projects$#', function () {
     json_out(['projects' => $rows]);
 });
 
+// Assignable people for a project: its members plus active admins
+// (admins are implicit members everywhere).
+route('GET', '#^/api/projects/(\d+)/members$#', function ($id) {
+    $u = require_auth();
+    require_project_member($u, (int)$id);
+    $stmt = db()->prepare(
+        "SELECT DISTINCT u.id, u.display_name FROM users u
+         LEFT JOIN project_users pu ON pu.user_id = u.id AND pu.project_id = ?
+         WHERE u.is_active = 1 AND (pu.project_id IS NOT NULL OR u.role = 'admin')
+         ORDER BY u.display_name"
+    );
+    $stmt->execute([(int)$id]);
+    $rows = $stmt->fetchAll();
+    foreach ($rows as &$r) $r['id'] = (int)$r['id'];
+    json_out(['members' => $rows]);
+});
+
 route('POST', '#^/api/projects$#', function () {
     require_admin();
     $in = read_json_body();

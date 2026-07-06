@@ -21,6 +21,15 @@ $stmt = db()->prepare(
 $stmt->execute([$id]);
 $replies = $stmt->fetchAll();
 
+$stmt = db()->prepare(
+    "SELECT DISTINCT u.id, u.display_name FROM users u
+     LEFT JOIN project_users pu ON pu.user_id = u.id AND pu.project_id = ?
+     WHERE u.is_active = 1 AND (pu.project_id IS NOT NULL OR u.role = 'admin')
+     ORDER BY u.display_name"
+);
+$stmt->execute([(int)$c['project_id']]);
+$members = $stmt->fetchAll();
+
 layout_top('Task #' . $id, $me);
 ?>
 <div class="task-detail">
@@ -44,6 +53,17 @@ layout_top('Task #' . $id, $me);
           <select class="status-select" data-comment="<?= (int)$c['id'] ?>">
             <?php foreach (['queued','working_on','complete'] as $s): ?>
               <option value="<?= $s ?>" <?= $s === $c['status'] ? 'selected' : '' ?>><?= e(status_label($s)) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </dd>
+        <dt>Assigned to</dt>
+        <dd>
+          <select class="assignee-select" data-comment="<?= (int)$c['id'] ?>">
+            <option value="">Unassigned</option>
+            <?php foreach ($members as $m): ?>
+              <option value="<?= (int)$m['id'] ?>" <?= (int)$m['id'] === (int)($c['assignee_id'] ?? 0) ? 'selected' : '' ?>>
+                <?= e($m['display_name']) ?>
+              </option>
             <?php endforeach; ?>
           </select>
         </dd>

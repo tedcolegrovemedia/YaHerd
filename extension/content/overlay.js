@@ -85,6 +85,16 @@
       this.host.remove();
     }
 
+    getMembers() {
+      if (!this._members) {
+        this._members = this.deps
+          .api('GET', `/api/projects/${this.deps.project.id}/members`)
+          .then((d) => d.members);
+        this._members.catch(() => { this._members = null; }); // allow retry on failure
+      }
+      return this._members;
+    }
+
     updateBadge() {
       const open = this.comments.filter((c) => c.status !== 'complete').length;
       this.fabBadge.textContent = open || '';
@@ -145,7 +155,10 @@
           const item = el('div', 'wc-item');
           const idx = this.comments.indexOf(c) + 1;
           item.appendChild(el('div', 'wc-excerpt', `#${idx} ${c.body.slice(0, 90)}${c.body.length > 90 ? '…' : ''}`));
-          item.appendChild(el('div', 'wc-meta', `${c.author_name || ''} · ${fmtDate(c.created_at)}${c.reply_count ? ` · 💬 ${c.reply_count}` : ''}`));
+          item.appendChild(el('div', 'wc-meta',
+            `${c.author_name || ''} · ${fmtDate(c.created_at)}` +
+            `${c.assignee_name ? ` · 👤 ${c.assignee_name}` : ''}` +
+            `${c.reply_count ? ` · 💬 ${c.reply_count}` : ''}`));
           item.addEventListener('click', () => {
             this.toggleSidebar(false);
             const pin = this.pinEls.get(c.id);
@@ -309,6 +322,30 @@
       closeBtn.addEventListener('click', () => this.closeBubble());
       row.appendChild(closeBtn);
       bubble.appendChild(row);
+
+      // Assignee
+      const assignRow = el('div', 'wc-row');
+      assignRow.style.justifyContent = 'flex-start';
+      assignRow.appendChild(el('span', 'wc-meta', '👤'));
+      const assignSel = el('select', 'wc-status');
+      assignSel.appendChild(new Option('Unassigned', ''));
+      assignSel.disabled = true;
+      assignRow.appendChild(assignSel);
+      bubble.appendChild(assignRow);
+      this.getMembers().then((members) => {
+        for (const m of members) {
+          assignSel.appendChild(new Option(m.display_name, String(m.id), false, m.id === c.assignee_id));
+        }
+        assignSel.disabled = false;
+      }).catch(() => {});
+      assignSel.addEventListener('change', async () => {
+        const userId = assignSel.value ? +assignSel.value : null;
+        try {
+          await this.deps.api('PATCH', `/api/comments/${c.id}/assignee`, { user_id: userId });
+          c.assignee_id = userId;
+          c.assignee_name = userId ? assignSel.options[assignSel.selectedIndex].text : null;
+        } catch (e) { err.textContent = e.message; }
+      });
 
       bubble.appendChild(el('h4', null, 'Replies'));
       const replies = el('div', 'wc-replies');

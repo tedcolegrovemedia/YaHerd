@@ -55,3 +55,5 @@ Load the extension unpacked as above and point its Server URL at `http://localho
 - **Screenshots** are captured by the extension (`chrome.tabs.captureVisibleTab`) at save time, cropped around the pin with a red marker, and uploaded with the comment. They're stored outside the web root and served only to logged-in project members.
 - **Auth**: the extension uses bearer tokens (30-day expiry, only a SHA-256 hash stored); the dashboard uses PHP sessions. Passwords use `password_hash()`. Roles (admin/user) and project membership are enforced server-side on every endpoint.
 - **Statuses**: queued → working on → complete. Drag cards between columns on the board, or change status from the pin bubble on the live site.
+- **Assignment**: every task can be assigned to a project member — from the board card, the task detail page, or the pin bubble in the extension.
+- **Migrations**: existing installs upgrade with `php server/src/migrate.php` (run automatically by the deploy update script).

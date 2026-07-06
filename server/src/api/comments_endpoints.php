@@ -9,6 +9,8 @@ function comment_row_out(array $r): array {
         'project_id'      => (int)$r['project_id'],
         'author_id'       => (int)$r['author_id'],
         'author_name'     => $r['author_name'] ?? null,
+        'assignee_id'     => $r['assignee_id'] !== null ? (int)$r['assignee_id'] : null,
+        'assignee_name'   => $r['assignee_name'] ?? null,
         'page_url'        => $r['page_url'],
         'page_path'       => $r['page_path'],
         'body'            => $r['body'],
@@ -41,9 +43,11 @@ route('GET', '#^/api/comments$#', function () {
     if (!$projectId) json_out(['error' => 'project_id required'], 422);
     require_project_member($u, $projectId);
 
-    $sql = 'SELECT c.*, u.display_name AS author_name,
+    $sql = 'SELECT c.*, u.display_name AS author_name, a.display_name AS assignee_name,
                    (SELECT COUNT(*) FROM comment_replies r WHERE r.comment_id = c.id) AS reply_count
-            FROM comments c JOIN users u ON u.id = c.author_id
+            FROM comments c
+            JOIN users u ON u.id = c.author_id
+            LEFT JOIN users a ON a.id = c.assignee_id
             WHERE c.project_id = ?';
     $params = [$projectId];
     if (!empty($_GET['page_path'])) {
@@ -132,6 +136,25 @@ route('PATCH', '#^/api/comments/(\d+)/status$#', function ($id) {
     }
     db()->prepare('UPDATE comments SET status = ? WHERE id = ?')->execute([$in['status'], (int)$id]);
     json_out(['ok' => true, 'status' => $in['status']]);
+});
+
+route('PATCH', '#^/api/comments/(\d+)/assignee$#', function ($id) {
+    $u = require_auth();
+    $c = fetch_comment_or_404((int)$id);
+    require_project_member($u, (int)$c['project_id']);
+    $in = read_json_body();
+    $assigneeId = $in['user_id'] ?? null;
+    if ($assigneeId !== null) {
+        $assigneeId = (int)$assigneeId;
+        $stmt = db()->prepare('SELECT * FROM users WHERE id = ? AND is_active = 1');
+        $stmt->execute([$assigneeId]);
+        $target = $stmt->fetch();
+        if (!$target || !is_project_member($target, (int)$c['project_id'])) {
+            json_out(['error' => 'assignee must be an active member of this project'], 422);
+        }
+    }
+    db()->prepare('UPDATE comments SET assignee_id = ? WHERE id = ?')->execute([$assigneeId, (int)$id]);
+    json_out(['ok' => true, 'assignee_id' => $assigneeId]);
 });
 
 route('DELETE', '#^/api/comments/(\d+)$#', function ($id) {
