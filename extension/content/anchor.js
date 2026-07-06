@@ -85,29 +85,54 @@
 
   // Resolve a stored comment to viewport coords.
   // Returns { x, y, approximate } in client (viewport) coordinates.
+  //
+  // Responsive sites often keep desktop AND mobile copies of the same content
+  // in the DOM (one hidden per breakpoint). querySelector alone would find the
+  // hidden desktop node and the pin would fall back to raw coordinates — so we
+  // consider every match, prefer a VISIBLE one that passes the text check, and
+  // as a last resort hunt for the stored text among same-tag elements.
   function resolvePin(c) {
+    const stored = c.anchor_text || '';
+    const isVisible = (node) => {
+      const r = node.getBoundingClientRect();
+      return !!(r.width || r.height);
+    };
+    const textOk = (node) => {
+      if (!stored) return true;
+      const n = Math.ceil(stored.length / 2);
+      return (node.textContent || '').trim().slice(0, n) === stored.slice(0, n);
+    };
+    const place = (node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        x: rect.left + (c.anchor_offset_x ?? 0.5) * rect.width,
+        y: rect.top + (c.anchor_offset_y ?? 0.5) * rect.height,
+        approximate: false,
+      };
+    };
+
     if (c.anchor_selector) {
-      let el = null;
-      try { el = document.querySelector(c.anchor_selector); } catch (_) {}
-      if (el && el.tagName === 'WEBCOMMENT-ROOT') el = null; // never anchor to our own overlay
-      if (el) {
-        const text = (el.textContent || '').trim();
-        const stored = c.anchor_text || '';
-        const okText =
-          !stored ||
-          text.slice(0, Math.ceil(stored.length / 2)) === stored.slice(0, Math.ceil(stored.length / 2));
-        if (okText) {
-          const rect = el.getBoundingClientRect();
-          if (rect.width || rect.height) {
-            return {
-              x: rect.left + (c.anchor_offset_x ?? 0.5) * rect.width,
-              y: rect.top + (c.anchor_offset_y ?? 0.5) * rect.height,
-              approximate: false,
-            };
-          }
+      let matches = [];
+      try { matches = [...document.querySelectorAll(c.anchor_selector)]; } catch (_) {}
+      matches = matches.filter((node) => node.tagName !== 'WEBCOMMENT-ROOT');
+      const best = matches.find((node) => isVisible(node) && textOk(node));
+      if (best) return place(best);
+    }
+
+    // Text rescue: the selector missed (breakpoint-specific DOM), but the
+    // snippet is distinctive enough to find the element by content.
+    if (stored.length >= 8) {
+      const lastSegment = (c.anchor_selector || '').split('>').pop().trim();
+      const tag = (lastSegment.match(/^([a-z][a-z0-9-]*)/i) || [])[1];
+      if (tag) {
+        const els = document.getElementsByTagName(tag);
+        const cap = Math.min(els.length, 3000);
+        for (let i = 0; i < cap; i++) {
+          if (isVisible(els[i]) && textOk(els[i])) return place(els[i]);
         }
       }
     }
+
     // Fallback: stored document coords, scaled horizontally for viewport changes.
     const scale = c.viewport_w ? window.innerWidth / c.viewport_w : 1;
     return {
