@@ -53,6 +53,7 @@
       comments,
       api: (method, path, body) => send({ type: 'api', method, path, body }),
       createComment: (fields, crop) => send({ type: 'createComment', fields, crop }),
+      setCover: () => send({ type: 'setCover', projectId: status.project.id }),
     });
   }
 

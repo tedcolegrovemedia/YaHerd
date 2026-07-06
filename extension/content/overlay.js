@@ -146,6 +146,27 @@
       add.addEventListener('click', () => { this.toggleSidebar(false); this.enterPinMode(); });
       sb.appendChild(add);
 
+      const cover = el('button', 'wc-btn wc-secondary wc-add', '🖼 Set board cover from this page');
+      cover.style.marginTop = '0';
+      cover.addEventListener('click', async () => {
+        cover.disabled = true;
+        cover.textContent = 'Capturing…';
+        // Hide our UI for a clean shot, wait for the hidden frame to paint.
+        this.host.style.visibility = 'hidden';
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        try {
+          await this.deps.setCover();
+          this.host.style.visibility = '';
+          cover.textContent = 'Cover saved ✓';
+        } catch (e) {
+          this.host.style.visibility = '';
+          cover.textContent = 'Failed: ' + e.message;
+        }
+        cover.disabled = false;
+        setTimeout(() => { cover.textContent = '🖼 Set board cover from this page'; }, 2500);
+      });
+      sb.appendChild(cover);
+
       const list = el('div', 'wc-list');
       for (const [value, label] of STATUSES) {
         const group = this.comments.filter((c) => c.status === value);

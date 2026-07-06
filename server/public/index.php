@@ -136,7 +136,10 @@ if (!$me) { header('Location: /login'); exit; }
 
 switch ($path) {
     case '/':
+        require $views . '/projects.php';
+        break;
     case '/board':
+        if (empty($_GET['project'])) { header('Location: /'); exit; }
         require $views . '/board.php';
         break;
     case '/task':

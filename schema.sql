@@ -29,6 +29,7 @@ CREATE TABLE projects (
   base_origin      VARCHAR(190) NOT NULL,
   match_subdomains TINYINT(1) NOT NULL DEFAULT 0,
   is_active        TINYINT(1) NOT NULL DEFAULT 1,
+  cover_path       VARCHAR(300) NULL,
   created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_origin (base_origin)
 ) ENGINE=InnoDB;

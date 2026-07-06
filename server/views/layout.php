@@ -14,7 +14,7 @@ function layout_top(string $title, ?array $me = null): void {
   <a class="brand" href="/">📌 YaHerd</a>
   <?php if ($me): ?>
   <nav>
-    <a href="/board">Board</a>
+    <a href="/">Projects</a>
     <?php if ($me['role'] === 'admin'): ?>
       <a href="/admin/projects">Projects</a>
       <a href="/admin/users">Users</a>

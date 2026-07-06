@@ -157,6 +157,20 @@ const handlers = {
     return apiFetch(state, msg.method, msg.path, { json: msg.body });
   },
 
+  // Capture the visible tab as the project's board cover (user-initiated).
+  async setCover(msg, sender) {
+    const state = await getState();
+    const dataUrl = await chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: 'jpeg', quality: 80 });
+    const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
+    const scale = Math.min(1, 1200 / bitmap.width);
+    const canvas = new OffscreenCanvas(Math.round(bitmap.width * scale), Math.round(bitmap.height * scale));
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.8 });
+    const fd = new FormData();
+    fd.append('screenshot', blob, 'cover.jpg');
+    return apiFetch(state, 'POST', `/api/projects/${msg.projectId}/cover`, { formData: fd });
+  },
+
   // Create a comment: capture + crop screenshot, then multipart POST.
   async createComment(msg, sender) {
     const state = await getState();

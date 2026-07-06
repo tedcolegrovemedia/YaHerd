@@ -53,6 +53,7 @@ function assignee_select(array $c, array $members): void { ?>
 layout_top('Board', $me);
 ?>
 <div class="board-head">
+  <a class="crumb" href="/">← All projects</a>
   <?php if (!$projects): ?>
     <p><?= $me['role'] === 'admin'
         ? 'No projects yet. <a href="/admin/projects">Create one</a> to get started.'
