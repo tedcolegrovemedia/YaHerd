@@ -134,13 +134,34 @@ document.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const f = new FormData(form);
     try {
-      await api('POST', '/api/users', {
+      const res = await api('POST', '/api/users', {
         display_name: f.get('display_name'),
         email: f.get('email'),
         password: f.get('password'),
         role: f.get('role'),
       });
-      location.reload();
+      if (res.email_sent === false) {
+        toast('User created, but the login email could not be sent', true);
+        setTimeout(() => location.reload(), 2500);
+      } else {
+        location.reload();
+      }
+    } catch (e) { toast(e.message, true); }
+  }
+
+  if (form.id === 'change-password-form') {
+    ev.preventDefault();
+    const f = new FormData(form);
+    if (f.get('new_password') !== f.get('confirm_password')) {
+      return toast('New passwords do not match', true);
+    }
+    try {
+      await api('POST', '/api/me/password', {
+        current_password: f.get('current_password'),
+        new_password: f.get('new_password'),
+      });
+      form.reset();
+      toast('Password updated');
     } catch (e) { toast(e.message, true); }
   }
 
@@ -154,15 +175,6 @@ document.addEventListener('submit', async (ev) => {
         match_subdomains: !!f.get('match_subdomains'),
       });
       location.reload();
-    } catch (e) { toast(e.message, true); }
-  }
-
-  if (form.classList.contains('assign-form')) {
-    ev.preventDefault();
-    const ids = [...form.querySelectorAll('input[name="user_ids[]"]:checked')].map((i) => +i.value);
-    try {
-      await api('PUT', `/api/projects/${form.dataset.project}/users`, { user_ids: ids });
-      toast('Assignments saved');
     } catch (e) { toast(e.message, true); }
   }
 
@@ -187,3 +199,120 @@ document.addEventListener('submit', async (ev) => {
     } catch (e) { toast(e.message, true); }
   }
 });
+
+// ----- Admin: delete a project -----
+document.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('.delete-project');
+  if (!btn) return;
+  const name = btn.dataset.name || 'this project';
+  if (!confirm(`Delete "${name}"? This permanently removes the project and all its comments and screenshots. This cannot be undone.`)) return;
+  try {
+    await api('DELETE', `/api/projects/${btn.dataset.project}`);
+    btn.closest('.project-card').remove();
+    toast('Project deleted');
+  } catch (e) { toast(e.message, true); }
+});
+
+// ----- Admin: project-member assignment (chips + typeahead) -----
+(function initAssign() {
+  const dataEl = document.getElementById('all-users');
+  if (!dataEl) return;
+  let allUsers = [];
+  try { allUsers = JSON.parse(dataEl.textContent) || []; } catch (_) {}
+
+  document.querySelectorAll('.assign-box').forEach((box) => {
+    const chips = box.querySelector('.chips');
+    const input = box.querySelector('.assign-input');
+    const menu = box.querySelector('.assign-menu');
+    const projectId = box.dataset.project;
+    let activeIndex = -1;
+
+    const currentIds = () =>
+      [...chips.querySelectorAll('.chip')].map((c) => +c.dataset.id);
+
+    async function save() {
+      try {
+        await api('PUT', `/api/projects/${projectId}/users`, { user_ids: currentIds() });
+        toast('Assignments saved');
+      } catch (e) { toast(e.message, true); }
+    }
+
+    function addChip(user) {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.dataset.id = user.id;
+      chip.textContent = user.name + ' ';
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'chip-x';
+      x.setAttribute('aria-label', 'Remove');
+      x.innerHTML = '&times;';
+      chip.appendChild(x);
+      chips.appendChild(chip);
+    }
+
+    function closeMenu() { menu.hidden = true; menu.innerHTML = ''; activeIndex = -1; }
+
+    function matches() {
+      const q = input.value.trim().toLowerCase();
+      const taken = new Set(currentIds());
+      return allUsers.filter((u) =>
+        !taken.has(u.id) &&
+        (q === '' || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+      ).slice(0, 8);
+    }
+
+    function renderMenu() {
+      const list = matches();
+      if (!list.length) { closeMenu(); return; }
+      menu.innerHTML = '';
+      list.forEach((u, i) => {
+        const opt = document.createElement('div');
+        opt.className = 'assign-opt' + (i === activeIndex ? ' active' : '');
+        opt.dataset.id = u.id;
+        opt.innerHTML = `<span>${escapeHtml(u.name)}</span><small>${escapeHtml(u.email)}</small>`;
+        menu.appendChild(opt);
+      });
+      menu.hidden = false;
+    }
+
+    function pick(id) {
+      const user = allUsers.find((u) => u.id === +id);
+      if (!user) return;
+      addChip(user);
+      input.value = '';
+      closeMenu();
+      save();
+    }
+
+    input.addEventListener('input', () => { activeIndex = -1; renderMenu(); });
+    input.addEventListener('focus', renderMenu);
+    input.addEventListener('keydown', (e) => {
+      const opts = [...menu.querySelectorAll('.assign-opt')];
+      if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex = Math.min(activeIndex + 1, opts.length - 1); renderMenu(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex = Math.max(activeIndex - 1, 0); renderMenu(); }
+      else if (e.key === 'Enter') {
+        if (activeIndex >= 0 && opts[activeIndex]) { e.preventDefault(); pick(opts[activeIndex].dataset.id); }
+      } else if (e.key === 'Escape') { closeMenu(); }
+    });
+
+    menu.addEventListener('mousedown', (e) => {
+      const opt = e.target.closest('.assign-opt');
+      if (opt) { e.preventDefault(); pick(opt.dataset.id); }
+    });
+
+    chips.addEventListener('click', (e) => {
+      const x = e.target.closest('.chip-x');
+      if (!x) return;
+      x.closest('.chip').remove();
+      save();
+    });
+
+    document.addEventListener('click', (e) => { if (!box.contains(e.target)) closeMenu(); });
+  });
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+})();

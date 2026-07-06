@@ -13,6 +13,16 @@ services:
       DB_NAME: yaherd
       DB_USER: yaherd
       DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in deploy/.env}
+      # Email (optional). Set these in deploy/.env to send new users their
+      # login details. Leave SMTP_HOST empty to disable outbound email.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SECURE: ${SMTP_SECURE:-tls}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-YaHerd}
+      APP_BASE_URL: ${APP_BASE_URL:-}
     volumes:
       - screenshots:/var/www/html/server/storage/screenshots
     depends_on:

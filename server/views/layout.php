@@ -20,7 +20,7 @@ function layout_top(string $title, ?array $me = null): void {
     <?php endif; ?>
   </nav>
   <div class="userbox">
-    <span><?= e($me['display_name']) ?></span>
+    <a href="/account"><?= e($me['display_name']) ?></a>
     <a href="/logout">Log out</a>
   </div>
   <?php endif; ?>

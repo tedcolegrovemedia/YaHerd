@@ -117,6 +117,27 @@ route('PATCH', '#^/api/projects/(\d+)$#', function ($id) {
     json_out(['ok' => true]);
 });
 
+route('DELETE', '#^/api/projects/(\d+)$#', function ($id) {
+    require_admin();
+    $id = (int)$id;
+    // Delete uploaded files first — comment/membership rows cascade via the
+    // foreign keys, but the screenshots on disk won't.
+    $stmt = db()->prepare('SELECT screenshot_path FROM comments WHERE project_id = ? AND screenshot_path IS NOT NULL');
+    $stmt->execute([$id]);
+    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $rel) {
+        @unlink(UPLOAD_DIR . '/' . $rel);
+    }
+    $cover = db()->prepare('SELECT cover_path FROM projects WHERE id = ?');
+    $cover->execute([$id]);
+    if ($rel = $cover->fetchColumn()) @unlink(UPLOAD_DIR . '/' . $rel);
+
+    $done = db()->prepare('DELETE FROM projects WHERE id = ?');
+    $done->execute([$id]);
+    if ($done->rowCount() === 0) json_out(['error' => 'not found'], 404);
+    @rmdir(UPLOAD_DIR . '/' . $id); // now-empty per-project screenshot dir
+    json_out(['ok' => true]);
+});
+
 route('PUT', '#^/api/projects/(\d+)/users$#', function ($id) {
     require_admin();
     $in = read_json_body();

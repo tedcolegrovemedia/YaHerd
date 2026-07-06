@@ -9,9 +9,21 @@ foreach (db()->query('SELECT project_id, user_id FROM project_users')->fetchAll(
     $assignments[(int)$r['project_id']][] = (int)$r['user_id'];
 }
 
+// Active users as a lookup for the assignment typeahead.
+$userById = [];
+foreach ($activeUsers as $u) $userById[(int)$u['id']] = $u;
+
 layout_top('Admin', $me);
 ?>
 <h1>Admin</h1>
+
+<script type="application/json" id="all-users"><?=
+    json_encode(array_map(fn($u) => [
+        'id'    => (int)$u['id'],
+        'name'  => $u['display_name'],
+        'email' => $u['email'],
+    ], $activeUsers), JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP)
+?></script>
 
 <div class="admin-cols">
 <section id="projects">
@@ -24,18 +36,25 @@ layout_top('Admin', $me);
       <?= (int)$p['match_subdomains'] ? '<span class="tag">+ subdomains</span>' : '' ?>
       <?= (int)$p['is_active'] ? '' : '<span class="tag off">inactive</span>' ?>
       <a class="boardlink" href="/board?project=<?= $pid ?>">Board →</a>
+      <button type="button" class="delete-project linklike-danger" data-project="<?= $pid ?>"
+              data-name="<?= e($p['name']) ?>">Delete</button>
     </div>
-    <form class="assign-form" data-project="<?= $pid ?>">
+    <div class="assign-box" data-project="<?= $pid ?>">
       <span class="hint">Assigned users:</span>
-      <?php foreach ($activeUsers as $u): ?>
-        <label class="check">
-          <input type="checkbox" name="user_ids[]" value="<?= (int)$u['id'] ?>"
-            <?= in_array((int)$u['id'], $assignments[$pid] ?? [], true) ? 'checked' : '' ?>>
-          <?= e($u['display_name']) ?>
-        </label>
-      <?php endforeach; ?>
-      <button type="submit">Save assignments</button>
-    </form>
+      <div class="chips">
+        <?php foreach ($assignments[$pid] ?? [] as $uid): if (!isset($userById[$uid])) continue; ?>
+          <span class="chip" data-id="<?= $uid ?>">
+            <?= e($userById[$uid]['display_name']) ?>
+            <button type="button" class="chip-x" aria-label="Remove">&times;</button>
+          </span>
+        <?php endforeach; ?>
+      </div>
+      <div class="assign-add">
+        <input type="text" class="assign-input" placeholder="Type a name to add…"
+               autocomplete="off" spellcheck="false">
+        <div class="assign-menu" hidden></div>
+      </div>
+    </div>
   </div>
   <?php endforeach; ?>
   <?php if (!$projects): ?><p class="empty">No projects yet.</p><?php endif; ?>

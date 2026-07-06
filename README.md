@@ -31,7 +31,22 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 The app listens on `127.0.0.1:8093`; put your reverse proxy / Cloudflare tunnel in front of it with HTTPS. MySQL data and uploaded screenshots live in named Docker volumes and survive rebuilds. The schema loads automatically on the first boot.
 
-On first visit you'll be prompted to create the admin account. Then: **Admin → Projects** to register a site by URL, **Admin → Users** to create accounts, and tick users onto projects.
+On first visit you'll be prompted to create the admin account. Then: **Admin → Projects** to register a site by URL, **Admin → Users** to create accounts, and assign users to projects by typing their name.
+
+**Email (optional).** When an admin creates a user, the app emails that user their login details. To send mail from the container, add SMTP settings to `deploy/.env`:
+
+```bash
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=postmaster@example.com
+SMTP_PASS=your-smtp-password
+SMTP_SECURE=tls            # tls (STARTTLS), ssl (implicit), or empty for none
+MAIL_FROM=no-reply@example.com
+MAIL_FROM_NAME=YaHerd
+APP_BASE_URL=https://feedback.example.com   # used for login links in emails
+```
+
+Leave `SMTP_HOST` empty to disable outbound email — user creation still works; the admin just sees a "couldn't send" notice. Users can change their own password from the **Account** page (their name in the top bar), and admins can delete a project from **Admin → Projects**.
 
 ## Local development (macOS)
 

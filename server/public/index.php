@@ -20,6 +20,7 @@ require $src . '/config.php';
 require $src . '/db.php';
 require $src . '/helpers.php';
 require $src . '/auth.php';
+require $src . '/mailer.php';
 require $src . '/router.php';
 
 // Harden the session cookie. Secure flag follows the original protocol when
@@ -148,6 +149,9 @@ switch ($path) {
         break;
     case '/task':
         require $views . '/task_detail.php';
+        break;
+    case '/account':
+        require $views . '/account.php';
         break;
     case '/admin':
         if ($me['role'] !== 'admin') { http_response_code(403); exit('Forbidden'); }

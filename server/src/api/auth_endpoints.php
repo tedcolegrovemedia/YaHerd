@@ -31,3 +31,18 @@ route('POST', '#^/api/logout$#', function () {
 route('GET', '#^/api/me$#', function () {
     json_out(['user' => public_user(require_auth())]);
 });
+
+// Change your own password (requires the current one).
+route('POST', '#^/api/me/password$#', function () {
+    $u = require_auth();
+    $in = read_json_body();
+    $current = (string)($in['current_password'] ?? '');
+    $new     = (string)($in['new_password'] ?? '');
+    if (!password_verify($current, $u['password_hash'])) {
+        json_out(['error' => 'current password is incorrect'], 422);
+    }
+    if (strlen($new) < 8) json_out(['error' => 'new password must be at least 8 characters'], 422);
+    db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+        ->execute([password_hash($new, PASSWORD_DEFAULT), (int)$u['id']]);
+    json_out(['ok' => true]);
+});

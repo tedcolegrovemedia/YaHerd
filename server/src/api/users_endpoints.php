@@ -26,7 +26,11 @@ route('POST', '#^/api/users$#', function () {
         if ($e->getCode() === '23000') json_out(['error' => 'a user with that email already exists'], 409);
         throw $e;
     }
-    json_out(['id' => (int)db()->lastInsertId()], 201);
+    $id = (int)db()->lastInsertId();
+    // Email the new user their login details. Account creation still succeeds
+    // if mail delivery fails — the UI is told via email_sent so it can warn.
+    $emailSent = send_welcome_email($email, trim($in['display_name']), $in['password']);
+    json_out(['id' => $id, 'email_sent' => $emailSent], 201);
 });
 
 route('PATCH', '#^/api/users/(\d+)$#', function ($id) {
