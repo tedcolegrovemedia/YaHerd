@@ -212,6 +212,19 @@ document.addEventListener('click', async (ev) => {
   } catch (e) { toast(e.message, true); }
 });
 
+// ----- Admin: delete a user -----
+document.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('.delete-user');
+  if (!btn) return;
+  const name = btn.dataset.name || 'this user';
+  if (!confirm(`Delete ${name}? This permanently removes their account. This cannot be undone.`)) return;
+  try {
+    await api('DELETE', `/api/users/${btn.dataset.user}`);
+    btn.closest('.user-row').remove();
+    toast('User deleted');
+  } catch (e) { toast(e.message, true); }
+});
+
 // ----- Admin: project-member assignment (chips + typeahead) -----
 (function initAssign() {
   const dataEl = document.getElementById('all-users');

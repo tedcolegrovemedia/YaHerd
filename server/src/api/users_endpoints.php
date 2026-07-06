@@ -63,3 +63,23 @@ route('PATCH', '#^/api/users/(\d+)$#', function ($id) {
     db()->prepare('UPDATE users SET ' . implode(', ', $fields) . ' WHERE id = ?')->execute($params);
     json_out(['ok' => true]);
 });
+
+route('DELETE', '#^/api/users/(\d+)$#', function ($id) {
+    $admin = require_admin();
+    $id = (int)$id;
+    if ($id === (int)$admin['id']) json_out(['error' => 'you cannot delete your own account'], 422);
+    $stmt = db()->prepare('SELECT id FROM users WHERE id = ?');
+    $stmt->execute([$id]);
+    if (!$stmt->fetch()) json_out(['error' => 'not found'], 404);
+    // Tokens and project memberships cascade; assigned comments are set NULL.
+    // Comments/replies they authored RESTRICT the delete — block with guidance.
+    try {
+        db()->prepare('DELETE FROM users WHERE id = ?')->execute([$id]);
+    } catch (PDOException $e) {
+        if ($e->getCode() === '23000') {
+            json_out(['error' => 'This user has authored comments or replies — deactivate them instead of deleting.'], 409);
+        }
+        throw $e;
+    }
+    json_out(['ok' => true]);
+});
