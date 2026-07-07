@@ -231,7 +231,10 @@ label input, label select, label textarea { margin-top: 6px; font-weight: 400; }
 .card-actions { display: flex; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
 .card-actions button { background: none; border: 0; padding: 2px 0; font-size: 12px; font-weight: 550; color: var(--ink-2); cursor: pointer; }
 .card-actions button:hover { background: none; color: var(--accent); text-decoration: underline; }
-.card-actions .delete-task { color: var(--danger); margin-left: auto; }
+.card-actions .view-task { font-size: 12px; font-weight: 550; color: var(--accent); text-decoration: none; align-self: center; }
+.card-actions .view-task:hover { text-decoration: underline; }
+.card-actions .archive-task { margin-left: auto; }
+.card-actions .delete-task { color: var(--danger); }
 
 .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; align-items: start; }
 .column { background: var(--surface-2); border-radius: var(--radius); padding: 14px; }

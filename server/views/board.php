@@ -77,6 +77,7 @@ function task_card(array $c, array $members, array $me, bool $archivedView): voi
       </p>
       <?php if (!$archivedView): ?><p class="assignee-row">👤 <?php assignee_select($c, $members); ?></p><?php endif; ?>
       <div class="card-actions">
+        <a class="view-task" href="/task?id=<?= (int)$c['id'] ?>">View task</a>
         <button type="button" class="archive-task" data-comment="<?= (int)$c['id'] ?>"
                 data-archived="<?= $archivedView ? '1' : '0' ?>"><?= $archivedView ? 'Restore' : 'Archive' ?></button>
         <?php if ($canDelete): ?>

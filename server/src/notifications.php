@@ -65,6 +65,13 @@ function notify_task_excerpt(array $comment): string {
     return mb_strimwidth((string)$comment['body'], 0, 60, '…');
 }
 
+// The project a task belongs to, for notification context. fetch_comment_or_404
+// joins project_name onto every comment row the task notifiers receive.
+function notify_project_name(array $comment): string {
+    $name = trim((string)($comment['project_name'] ?? ''));
+    return $name !== '' ? $name : 'a project';
+}
+
 // ---- Account ----------------------------------------------------------------
 
 // $newPassword set => admin reset (include it); null => self-service change.
@@ -111,10 +118,11 @@ function notify_assigned(array $comment, array $assignee, int $actorId): void {
     $base = app_base_url();
     $tid  = (int)$comment['id'];
     $excerpt = notify_task_excerpt($comment);
+    $proj = notify_project_name($comment);
     $link = "/task?id=$tid";
-    $subject = "You were assigned task #$tid";
+    $subject = "You were assigned task #$tid in \"$proj\"";
     $body = "Hi {$assignee['display_name']},\n\n"
-          . "You've been assigned task #$tid (\"$excerpt\").\n\n"
+          . "You've been assigned task #$tid (\"$excerpt\") in the project \"$proj\".\n\n"
           . "View it:\n  $base$link\n";
     notify_user($assignee, 'assigned', $subject, $body, $link);
 }
@@ -131,12 +139,13 @@ function notify_reply(array $comment, string $replyBody, int $actorId): void {
         if ($aid !== null) $ids[] = (int)$aid;
     }
     $excerpt = notify_task_excerpt($comment);
+    $proj = notify_project_name($comment);
     foreach (notify_fetch_users($ids) as $u) {
         if ((int)$u['id'] === $actorId) continue;
         $link = "/task?id=$tid";
-        $subject = "New reply on task #$tid";
+        $subject = "New reply on task #$tid in \"$proj\"";
         $body = "Hi {$u['display_name']},\n\n"
-              . "There's a new reply on task #$tid (\"$excerpt\"):\n\n"
+              . "There's a new reply on task #$tid (\"$excerpt\") in \"$proj\":\n\n"
               . rtrim($replyBody) . "\n\n"
               . "View the task:\n  $base$link\n";
         notify_user($u, 'reply', $subject, $body, $link);
@@ -148,15 +157,16 @@ function notify_status(array $comment, string $newStatus, int $actorId): void {
     $tid   = (int)$comment['id'];
     $label = NOTIFY_STATUS_LABEL[$newStatus] ?? $newStatus;
     $excerpt = notify_task_excerpt($comment);
+    $proj = notify_project_name($comment);
     $ids = [];
     if ($comment['author_id']   !== null) $ids[] = (int)$comment['author_id'];
     if ($comment['assignee_id'] !== null) $ids[] = (int)$comment['assignee_id'];
     foreach (notify_fetch_users($ids) as $u) {
         if ((int)$u['id'] === $actorId) continue;
         $link = "/task?id=$tid";
-        $subject = "Task #$tid is now \"$label\"";
+        $subject = "Task #$tid in \"$proj\" is now \"$label\"";
         $body = "Hi {$u['display_name']},\n\n"
-              . "Task #$tid (\"$excerpt\") was moved to \"$label\".\n\n"
+              . "Task #$tid (\"$excerpt\") in \"$proj\" was moved to \"$label\".\n\n"
               . "View the task:\n  $base$link\n";
         notify_user($u, 'status', $subject, $body, $link);
     }

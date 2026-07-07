@@ -31,7 +31,11 @@ function comment_row_out(array $r): array {
 }
 
 function fetch_comment_or_404(int $id): array {
-    $stmt = db()->prepare('SELECT * FROM comments WHERE id = ?');
+    $stmt = db()->prepare(
+        'SELECT c.*, p.name AS project_name
+         FROM comments c JOIN projects p ON p.id = c.project_id
+         WHERE c.id = ?'
+    );
     $stmt->execute([$id]);
     $c = $stmt->fetch();
     if (!$c) json_out(['error' => 'not found'], 404);
