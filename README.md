@@ -1,22 +1,31 @@
-# 📌 YaHerd
+# YaHerd
 
-A self-hosted, BugHerd-style visual feedback tool. Reviewers browse the **real live website** with a Chrome extension installed, pin comments to specific elements on the page, and each comment automatically gets a **screenshot of the pinned spot**. A PHP + MySQL backend provides the API, a drag-and-drop task board (queued → working on → complete), and an admin area for users, projects, and assignments.
+A self-hosted, BugHerd-style visual feedback tool. Reviewers browse the **real live website** with a Chrome extension installed, pin comments to specific elements on the page, and each comment automatically gets a **screenshot of the pinned spot**. A PHP + MySQL backend provides the API, a drag-and-drop task board (queued → working on → complete) with archiving, per-user email + in-app notifications, and an admin area for users, projects, and assignments.
 
 ## Components
 
 | Part | What it is |
 |---|---|
 | `extension/` | Chrome extension (Manifest V3): overlay with pins, sidebar, comment form, and screenshot capture |
-| `server/` | Plain PHP app: JSON API for the extension + web dashboard (board, task detail, admin) |
-| `schema.sql` | MySQL schema |
+| `server/` | Plain PHP app: JSON API for the extension + web dashboard (projects, board, task detail, account, admin) |
+| `schema.sql` | MySQL schema (fresh installs) |
+| `server/src/migrate.php` | Idempotent migrations (existing installs) |
 | `deploy/` | Dockerfile + docker-compose for production deployment |
+
+## Feature overview
+
+- **Projects gallery** (`/`) — cover image + open/working/done counts per project.
+- **Board** (`/board?project=N`) — drag cards between queued / working on / complete. Each card can be assigned, archived, or deleted. A **🗄 Archived** toggle opens the archived list (restore or delete).
+- **Task detail** (`/task?id=N`) — screenshot, status, assignee, replies, and Archive/Delete actions.
+- **Account** (`/account`, click your name) — change your own password, toggle which activity emails you receive, and a **notifications center** (in-app inbox) with an unread badge on your avatar.
+- **Admin** — split into **Projects** (`/admin`) and **Users** (`/admin/users`) tabs. Create/delete projects, create/delete/deactivate users, reset passwords, and assign members with a name/email typeahead.
 
 ## For testers: install the extension
 
-1. Download and unzip the extension (`YaHerd-extension.zip` from a release, or grab the `extension/` folder from this repo).
+1. Download and unzip the extension (`YaHerd-extension.zip` from a release, or grab the `extension/` folder from this repo). The dashboard also links it in the footer.
 2. Open `chrome://extensions`, enable **Developer mode** (top right), click **Load unpacked**, select the unzipped `extension` folder.
 3. Click the YaHerd toolbar icon, log in with the email/password your admin gave you (the server URL is pre-filled).
-4. Browse any site that's registered as a project — a 📌 button appears bottom-right. Click **+ Pin a comment**, click any element, write your note, save. The pinned spot is screenshotted automatically.
+4. Browse any site that's registered as a project — a pin button appears bottom-right. Click **+ Pin a comment**, click any element, write your note, save. The pinned spot is screenshotted automatically.
 
 ## Production deployment (Docker)
 
@@ -33,20 +42,32 @@ The app listens on `127.0.0.1:8093`; put your reverse proxy / Cloudflare tunnel 
 
 On first visit you'll be prompted to create the admin account. Then: **Admin → Projects** to register a site by URL, **Admin → Users** to create accounts, and assign users to projects by typing their name.
 
-**Email (optional).** When an admin creates a user, the app emails that user their login details. To send mail from the container, add SMTP settings to `deploy/.env`:
+### Deploying an update
+
+```bash
+git pull
+docker compose -f deploy/docker-compose.yml up -d --build
+docker compose -f deploy/docker-compose.yml exec app php server/src/migrate.php   # apply schema migrations
+```
+
+`migrate.php` is idempotent — safe to run on every deploy. Fresh installs get everything from `schema.sql` and don't need it.
+
+### Email (optional)
+
+Activity notifications and new-user login emails are sent over SMTP (any provider, e.g. Resend, Mailgun, SES). Add to `deploy/.env`:
 
 ```bash
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
-SMTP_USER=postmaster@example.com
+SMTP_USER=your-smtp-user
 SMTP_PASS=your-smtp-password
 SMTP_SECURE=tls            # tls (STARTTLS), ssl (implicit), or empty for none
-MAIL_FROM=no-reply@example.com
+MAIL_FROM=no-reply@yourdomain.com          # the domain must be verified with your provider
 MAIL_FROM_NAME=YaHerd
-APP_BASE_URL=https://feedback.example.com   # used for login links in emails
+APP_BASE_URL=https://feedback.example.com  # used for links in emails
 ```
 
-Leave `SMTP_HOST` empty to disable outbound email — user creation still works; the admin just sees a "couldn't send" notice. Users can change their own password from the **Account** page (their name in the top bar), and admins can delete a project from **Admin → Projects**.
+Leave `SMTP_HOST` empty to disable outbound email (the app falls back to PHP `mail()`; user creation still works and the admin just sees a "couldn't send" notice). **The `MAIL_FROM` domain must be verified with your SMTP provider** or it will reject the send.
 
 ## Local development (macOS)
 
@@ -58,11 +79,13 @@ docker run -d --name yaherd-mysql --restart unless-stopped \
 docker exec -i yaherd-mysql mysql -uroot -pdevpassword webcomment < schema.sql
 
 # Server
-cp server/src/config.example.php server/src/config.php   # edit DB credentials
+cp server/src/config.example.php server/src/config.php   # edit DB credentials (+ SMTP if testing email)
 php -S 0.0.0.0:8000 -t server/public server/public/index.php
 ```
 
-Load the extension unpacked as above and point its Server URL at `http://localhost:8000`.
+Load the extension unpacked as above and point its Server URL at `http://localhost:8000`. After pulling new code, apply migrations with `php server/src/migrate.php`.
+
+`server/src/config.php` and `deploy/.env` are gitignored (they hold DB + SMTP secrets), so re-create them on each machine.
 
 ## How it works
 
@@ -71,4 +94,6 @@ Load the extension unpacked as above and point its Server URL at `http://localho
 - **Auth**: the extension uses bearer tokens (30-day expiry, only a SHA-256 hash stored); the dashboard uses PHP sessions. Passwords use `password_hash()`. Roles (admin/user) and project membership are enforced server-side on every endpoint.
 - **Statuses**: queued → working on → complete. Drag cards between columns on the board, or change status from the pin bubble on the live site.
 - **Assignment**: every task can be assigned to a project member — from the board card, the task detail page, or the pin bubble in the extension.
-- **Migrations**: existing installs upgrade with `php server/src/migrate.php` (run automatically by the deploy update script).
+- **Archiving**: archiving a task hides it from the board, the project counts, and the live page/extension pins (reversible from the Archived view). **Deleting** removes it permanently along with its replies and screenshot (admin or the task's author only).
+- **Notifications**: six activity triggers — new user, password change, added to a project, assigned a task, a reply on a task, and a task status change. Each creates an **in-app notification** (avatar badge + Account-page inbox) and sends an **email**, except the person who performed the action. Email is gated by per-user preferences on the Account page (`notify_*` columns); account/password emails always send. In-app records live in the `notifications` table; the mailer (`server/src/mailer.php`) and triggers (`server/src/notifications.php`) are the two files to look at.
+- **Migrations**: existing installs upgrade by running `php server/src/migrate.php` after deploying new code (idempotent). It adds columns/tables introduced since the original schema (assignee, cover image, notification prefs, in-app notifications, task archiving, nullable comment authors).
