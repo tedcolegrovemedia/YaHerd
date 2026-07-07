@@ -21,10 +21,10 @@ $byStatus = ['queued' => [], 'working_on' => [], 'complete' => []];
 $members = [];
 if ($project) {
     $stmt = db()->prepare(
-        'SELECT c.*, u.display_name AS author_name,
+        "SELECT c.*, COALESCE(u.display_name, 'no user') AS author_name,
                 (SELECT COUNT(*) FROM comment_replies r WHERE r.comment_id = c.id) AS reply_count
-         FROM comments c JOIN users u ON u.id = c.author_id
-         WHERE c.project_id = ? ORDER BY c.created_at DESC'
+         FROM comments c LEFT JOIN users u ON u.id = c.author_id
+         WHERE c.project_id = ? ORDER BY c.created_at DESC"
     );
     $stmt->execute([$projectId]);
     foreach ($stmt->fetchAll() as $c) $byStatus[$c['status']][] = $c;

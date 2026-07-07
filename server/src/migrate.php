@@ -31,4 +31,34 @@ db()->exec(
      ) ENGINE=InnoDB'
 );
 
+// Deleting a user should keep their comments/replies (author shown as "no
+// user"), so author_id must be nullable with ON DELETE SET NULL rather than
+// the original RESTRICT.
+function ensure_author_set_null(string $table, string $col): void {
+    $stmt = db()->prepare(
+        'SELECT rc.CONSTRAINT_NAME, rc.DELETE_RULE
+         FROM information_schema.REFERENTIAL_CONSTRAINTS rc
+         JOIN information_schema.KEY_COLUMN_USAGE kcu
+           ON kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+          AND kcu.CONSTRAINT_NAME   = rc.CONSTRAINT_NAME
+         WHERE rc.CONSTRAINT_SCHEMA = DATABASE()
+           AND rc.TABLE_NAME = ?
+           AND kcu.COLUMN_NAME = ?
+           AND kcu.REFERENCED_TABLE_NAME = "users"'
+    );
+    $stmt->execute([$table, $col]);
+    $fk = $stmt->fetch();
+    if ($fk && $fk['DELETE_RULE'] === 'SET NULL') return; // already migrated
+
+    if ($fk) db()->exec("ALTER TABLE $table DROP FOREIGN KEY {$fk['CONSTRAINT_NAME']}");
+    db()->exec("ALTER TABLE $table MODIFY $col INT UNSIGNED NULL");
+    db()->exec(
+        "ALTER TABLE $table ADD CONSTRAINT fk_{$table}_{$col}
+         FOREIGN KEY ($col) REFERENCES users(id) ON DELETE SET NULL"
+    );
+    echo "set $table.$col ON DELETE SET NULL\n";
+}
+ensure_author_set_null('comments', 'author_id');
+ensure_author_set_null('comment_replies', 'author_id');
+
 echo "migrations complete\n";

@@ -7,8 +7,8 @@ function comment_row_out(array $r): array {
     return [
         'id'              => (int)$r['id'],
         'project_id'      => (int)$r['project_id'],
-        'author_id'       => (int)$r['author_id'],
-        'author_name'     => $r['author_name'] ?? null,
+        'author_id'       => $r['author_id'] !== null ? (int)$r['author_id'] : null,
+        'author_name'     => $r['author_name'] ?? 'no user',
         'assignee_id'     => $r['assignee_id'] !== null ? (int)$r['assignee_id'] : null,
         'assignee_name'   => $r['assignee_name'] ?? null,
         'page_url'        => $r['page_url'],
@@ -46,7 +46,7 @@ route('GET', '#^/api/comments$#', function () {
     $sql = 'SELECT c.*, u.display_name AS author_name, a.display_name AS assignee_name,
                    (SELECT COUNT(*) FROM comment_replies r WHERE r.comment_id = c.id) AS reply_count
             FROM comments c
-            JOIN users u ON u.id = c.author_id
+            LEFT JOIN users u ON u.id = c.author_id
             LEFT JOIN users a ON a.id = c.assignee_id
             WHERE c.project_id = ?';
     $params = [$projectId];
@@ -186,9 +186,10 @@ route('GET', '#^/api/comments/(\d+)/replies$#', function ($id) {
     $c = fetch_comment_or_404((int)$id);
     require_project_member($u, (int)$c['project_id']);
     $stmt = db()->prepare(
-        'SELECT r.id, r.body, r.created_at, r.author_id, u.display_name AS author_name
-         FROM comment_replies r JOIN users u ON u.id = r.author_id
-         WHERE r.comment_id = ? ORDER BY r.created_at'
+        "SELECT r.id, r.body, r.created_at, r.author_id,
+                COALESCE(u.display_name, 'no user') AS author_name
+         FROM comment_replies r LEFT JOIN users u ON u.id = r.author_id
+         WHERE r.comment_id = ? ORDER BY r.created_at"
     );
     $stmt->execute([(int)$id]);
     json_out(['replies' => $stmt->fetchAll()]);

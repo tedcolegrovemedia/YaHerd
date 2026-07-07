@@ -3,9 +3,9 @@ require __DIR__ . '/layout.php';
 
 $id = (int)($_GET['id'] ?? 0);
 $stmt = db()->prepare(
-    'SELECT c.*, u.display_name AS author_name, p.name AS project_name
-     FROM comments c JOIN users u ON u.id = c.author_id JOIN projects p ON p.id = c.project_id
-     WHERE c.id = ?'
+    "SELECT c.*, COALESCE(u.display_name, 'no user') AS author_name, p.name AS project_name
+     FROM comments c LEFT JOIN users u ON u.id = c.author_id JOIN projects p ON p.id = c.project_id
+     WHERE c.id = ?"
 );
 $stmt->execute([$id]);
 $c = $stmt->fetch();
@@ -14,9 +14,9 @@ if (!$c || !is_project_member($me, (int)$c['project_id'])) {
 }
 
 $stmt = db()->prepare(
-    'SELECT r.*, u.display_name AS author_name
-     FROM comment_replies r JOIN users u ON u.id = r.author_id
-     WHERE r.comment_id = ? ORDER BY r.created_at'
+    "SELECT r.*, COALESCE(u.display_name, 'no user') AS author_name
+     FROM comment_replies r LEFT JOIN users u ON u.id = r.author_id
+     WHERE r.comment_id = ? ORDER BY r.created_at"
 );
 $stmt->execute([$id]);
 $replies = $stmt->fetchAll();

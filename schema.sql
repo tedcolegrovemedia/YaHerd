@@ -45,7 +45,7 @@ CREATE TABLE project_users (
 CREATE TABLE comments (
   id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   project_id      INT UNSIGNED NOT NULL,
-  author_id       INT UNSIGNED NOT NULL,
+  author_id       INT UNSIGNED NULL,
   assignee_id     INT UNSIGNED NULL,
   page_url        VARCHAR(1000) NOT NULL,
   page_path       VARCHAR(500)  NOT NULL,
@@ -64,7 +64,7 @@ CREATE TABLE comments (
   KEY idx_project_path (project_id, page_path(191)),
   KEY idx_project_status (project_id, status),
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-  FOREIGN KEY (author_id)  REFERENCES users(id),
+  FOREIGN KEY (author_id)  REFERENCES users(id) ON DELETE SET NULL,
   FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
@@ -78,9 +78,9 @@ CREATE TABLE login_attempts (
 CREATE TABLE comment_replies (
   id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   comment_id INT UNSIGNED NOT NULL,
-  author_id  INT UNSIGNED NOT NULL,
+  author_id  INT UNSIGNED NULL,
   body       TEXT NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
-  FOREIGN KEY (author_id)  REFERENCES users(id)
+  FOREIGN KEY (author_id)  REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;

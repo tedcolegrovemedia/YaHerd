@@ -71,15 +71,9 @@ route('DELETE', '#^/api/users/(\d+)$#', function ($id) {
     $stmt = db()->prepare('SELECT id FROM users WHERE id = ?');
     $stmt->execute([$id]);
     if (!$stmt->fetch()) json_out(['error' => 'not found'], 404);
-    // Tokens and project memberships cascade; assigned comments are set NULL.
-    // Comments/replies they authored RESTRICT the delete — block with guidance.
-    try {
-        db()->prepare('DELETE FROM users WHERE id = ?')->execute([$id]);
-    } catch (PDOException $e) {
-        if ($e->getCode() === '23000') {
-            json_out(['error' => 'This user has authored comments or replies — deactivate them instead of deleting.'], 409);
-        }
-        throw $e;
-    }
+    // Tokens and project memberships cascade; comments/replies they authored
+    // stay live with author_id set NULL (rendered as "no user"), and assigned
+    // tasks fall back to unassigned.
+    db()->prepare('DELETE FROM users WHERE id = ?')->execute([$id]);
     json_out(['ok' => true]);
 });
