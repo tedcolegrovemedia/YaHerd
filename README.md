@@ -87,6 +87,38 @@ Load the extension unpacked as above and point its Server URL at `http://localho
 
 `server/src/config.php` and `deploy/.env` are gitignored (they hold DB + SMTP secrets), so re-create them on each machine.
 
+## Shared hosting (no Docker) — reference
+
+YaHerd is plain PHP + MySQL with **no Composer/framework/build step**, so it runs on standard cPanel-style shared hosting. The Docker path is just a convenience. To install on a LAMP host by hand:
+
+**Requirements:** PHP **8.1+** (uses the `never` return type), MySQL/MariaDB, Apache with `mod_rewrite` (or Nginx equivalent), HTTPS (AutoSSL/Let's Encrypt — needed for the secure session cookie and the extension), and — for email — outbound SMTP on port 587 or PHP `mail()`.
+
+**1. Files & document root.** Upload the repo so the `server/` folder stays intact (the code uses relative `dirname()` paths). Point the domain's document root at `server/public/`. If the host forces `public_html` as the docroot, put the *contents* of `server/public/` in `public_html/` and keep `server/src`, `server/views`, and `server/storage` **above** the web root.
+
+**2. `.htaccess`** — the Docker image does routing in the Apache vhost; on shared hosting you need this in the document root (`server/public/`) instead. It is **not** shipped in the repo:
+
+```apache
+# Route all non-file requests to the front controller
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [QSA,L]
+
+# Re-export the Authorization header (Apache strips it) so the
+# extension's Bearer-token login works.
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+# If that doesn't surface on your host (FPM/CGI), use instead:
+#   RewriteCond %{HTTP:Authorization} .
+#   RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+```
+
+**3. Config & storage.** Copy `server/src/config.example.php` to `server/src/config.php` and set the cPanel DB creds (and SMTP if using email). Screenshots are stored **outside the web root** at `UPLOAD_DIR` (default `server/storage/screenshots`) — make sure that folder exists and is writable by the web user, and keep it out of `public_html`.
+
+**4. Database.** Create a MySQL DB in cPanel, then import `schema.sql` via **phpMyAdmin** (Import tab). On first visit you'll be prompted to create the admin account.
+
+**5. Updates & migrations.** Schema changes ship as `server/src/migrate.php` (idempotent). With SSH: `php server/src/migrate.php`. **Without SSH** (common on shared hosting): open `migrate.php`, and run the `ALTER TABLE` / `CREATE TABLE` statements it contains by hand in phpMyAdmin — or use the host's scheduled-task/cron "run a PHP script" feature if it has one. (`migrate.php` has no auth guard, so don't leave it reachable from the web.)
+
+**6. PHP settings.** Ensure `upload_max_filesize` and `post_max_size` are ≥ 2 MB (screenshots cap at 2 MB), and select PHP 8.1+ in the host's PHP-version manager.
+
 ## How it works
 
 - **Pins** are anchored to a generated CSS selector + fractional offset inside the element, with a text-snippet sanity check. If the element disappears or the selector breaks, the pin falls back to stored page coordinates and renders dashed ("approximate").
