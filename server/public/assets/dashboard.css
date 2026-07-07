@@ -309,6 +309,11 @@ dl dd code { font-family: var(--mono); font-size: 12px; background: var(--surfac
   border: 1px solid var(--border); border-radius: var(--radius);
   padding: 20px 22px; box-shadow: var(--shadow-sm);
 }
+.account-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 440px)); gap: 24px; align-items: start; }
+@media (max-width: 900px) { .account-cols { grid-template-columns: 1fr; } }
+.account-cols .stack { max-width: none; }
+.pref-list { display: flex; flex-direction: column; gap: 12px; }
+.pref-list .check { margin: 0; }
 .stack label:first-of-type { margin-top: 0; }
 .stack button { margin-top: 6px; }
 label.check { display: inline-flex; gap: 8px; align-items: center; font-weight: 400; }

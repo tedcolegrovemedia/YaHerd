@@ -10,6 +10,10 @@ CREATE TABLE users (
   password_hash VARCHAR(255) NOT NULL,
   role          ENUM('admin','user') NOT NULL DEFAULT 'user',
   is_active     TINYINT(1) NOT NULL DEFAULT 1,
+  notify_project_added TINYINT(1) NOT NULL DEFAULT 1,
+  notify_assigned      TINYINT(1) NOT NULL DEFAULT 1,
+  notify_replies       TINYINT(1) NOT NULL DEFAULT 1,
+  notify_status        TINYINT(1) NOT NULL DEFAULT 1,
   created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 

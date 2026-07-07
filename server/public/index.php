@@ -21,6 +21,7 @@ require $src . '/db.php';
 require $src . '/helpers.php';
 require $src . '/auth.php';
 require $src . '/mailer.php';
+require $src . '/notifications.php';
 require $src . '/router.php';
 
 // Harden the session cookie. Secure flag follows the original protocol when

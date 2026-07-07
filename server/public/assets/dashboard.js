@@ -120,6 +120,9 @@ document.addEventListener('change', async (ev) => {
     } else if (el.matches('.user-active')) {
       await api('PATCH', `/api/users/${el.dataset.user}`, { is_active: el.checked });
       toast(el.checked ? 'User activated' : 'User deactivated');
+    } else if (el.matches('.notify-pref')) {
+      await api('POST', '/api/me/notifications', { [el.dataset.pref]: el.checked });
+      toast('Notification preferences saved');
     }
   } catch (e) {
     toast(e.message, true);

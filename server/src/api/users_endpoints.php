@@ -61,6 +61,12 @@ route('PATCH', '#^/api/users/(\d+)$#', function ($id) {
     if (!$fields) json_out(['error' => 'nothing to update'], 422);
     $params[] = (int)$id;
     db()->prepare('UPDATE users SET ' . implode(', ', $fields) . ' WHERE id = ?')->execute($params);
+    // Tell the user their password changed (with the new one the admin set).
+    if (!empty($in['password'])) {
+        $t = db()->prepare('SELECT * FROM users WHERE id = ?');
+        $t->execute([(int)$id]);
+        if ($target = $t->fetch()) notify_password_changed($target, $in['password']);
+    }
     json_out(['ok' => true]);
 });
 

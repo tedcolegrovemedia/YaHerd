@@ -135,7 +135,10 @@ route('POST', '#^/api/comments$#', function () {
 
     $c = fetch_comment_or_404($id);
     $c['author_name'] = $u['display_name'];
-    if ($assigneeId !== null) $c['assignee_name'] = $target['display_name'];
+    if ($assigneeId !== null) {
+        $c['assignee_name'] = $target['display_name'];
+        notify_assigned($c, $target, (int)$u['id']);
+    }
     json_out(['comment' => comment_row_out($c)], 201);
 });
 
@@ -148,6 +151,7 @@ route('PATCH', '#^/api/comments/(\d+)/status$#', function ($id) {
         json_out(['error' => 'status must be one of: ' . implode(', ', COMMENT_STATUSES)], 422);
     }
     db()->prepare('UPDATE comments SET status = ? WHERE id = ?')->execute([$in['status'], (int)$id]);
+    notify_status($c, $in['status'], (int)$u['id']);
     json_out(['ok' => true, 'status' => $in['status']]);
 });
 
@@ -167,6 +171,7 @@ route('PATCH', '#^/api/comments/(\d+)/assignee$#', function ($id) {
         }
     }
     db()->prepare('UPDATE comments SET assignee_id = ? WHERE id = ?')->execute([$assigneeId, (int)$id]);
+    if ($assigneeId !== null) notify_assigned($c, $target, (int)$u['id']);
     json_out(['ok' => true, 'assignee_id' => $assigneeId]);
 });
 
@@ -204,7 +209,9 @@ route('POST', '#^/api/comments/(\d+)/replies$#', function ($id) {
     if ($body === '') json_out(['error' => 'body required'], 422);
     db()->prepare('INSERT INTO comment_replies (comment_id, author_id, body) VALUES (?, ?, ?)')
         ->execute([(int)$id, (int)$u['id'], $body]);
-    json_out(['id' => (int)db()->lastInsertId()], 201);
+    $replyId = (int)db()->lastInsertId();   // capture before notify runs more queries
+    notify_reply($c, $body, (int)$u['id']);
+    json_out(['id' => $replyId], 201);
 });
 
 route('GET', '#^/api/screenshots/(\d+)$#', function ($id) {

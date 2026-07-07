@@ -44,5 +44,22 @@ route('POST', '#^/api/me/password$#', function () {
     if (strlen($new) < 8) json_out(['error' => 'new password must be at least 8 characters'], 422);
     db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
         ->execute([password_hash($new, PASSWORD_DEFAULT), (int)$u['id']]);
+    notify_password_changed($u, null);   // security notice (no password)
+    json_out(['ok' => true]);
+});
+
+// Update your own email-notification preferences.
+route('POST', '#^/api/me/notifications$#', function () {
+    $u = require_auth();
+    $in = read_json_body();
+    $cols = ['notify_project_added', 'notify_assigned', 'notify_replies', 'notify_status'];
+    $fields = [];
+    $params = [];
+    foreach ($cols as $c) {
+        if (array_key_exists($c, $in)) { $fields[] = "$c = ?"; $params[] = $in[$c] ? 1 : 0; }
+    }
+    if (!$fields) json_out(['error' => 'nothing to update'], 422);
+    $params[] = (int)$u['id'];
+    db()->prepare('UPDATE users SET ' . implode(', ', $fields) . ' WHERE id = ?')->execute($params);
     json_out(['ok' => true]);
 });

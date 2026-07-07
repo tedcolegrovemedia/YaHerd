@@ -139,14 +139,27 @@ route('DELETE', '#^/api/projects/(\d+)$#', function ($id) {
 });
 
 route('PUT', '#^/api/projects/(\d+)/users$#', function ($id) {
-    require_admin();
+    $admin = require_admin();
     $in = read_json_body();
     $userIds = array_map('intval', $in['user_ids'] ?? []);
+    $pid = (int)$id;
     $pdo = db();
+    // Snapshot current members so we only email the newly-added ones.
+    $before = $pdo->prepare('SELECT user_id FROM project_users WHERE project_id = ?');
+    $before->execute([$pid]);
+    $existing = array_map('intval', $before->fetchAll(PDO::FETCH_COLUMN));
+
     $pdo->beginTransaction();
-    $pdo->prepare('DELETE FROM project_users WHERE project_id = ?')->execute([(int)$id]);
+    $pdo->prepare('DELETE FROM project_users WHERE project_id = ?')->execute([$pid]);
     $ins = $pdo->prepare('INSERT IGNORE INTO project_users (project_id, user_id) VALUES (?, ?)');
-    foreach ($userIds as $uid) $ins->execute([(int)$id, $uid]);
+    foreach ($userIds as $uid) $ins->execute([$pid, $uid]);
     $pdo->commit();
+
+    $added = array_values(array_diff($userIds, $existing));
+    if ($added) {
+        $proj = $pdo->prepare('SELECT id, name FROM projects WHERE id = ?');
+        $proj->execute([$pid]);
+        if ($project = $proj->fetch()) notify_project_added($project, $added, (int)$admin['id']);
+    }
     json_out(['ok' => true]);
 });
