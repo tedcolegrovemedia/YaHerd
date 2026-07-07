@@ -218,7 +218,20 @@ label input, label select, label textarea { margin-top: 6px; font-weight: 400; }
 .board-head form.inline { display: inline-block; margin: 0; }
 .board-head select { width: auto; min-width: 280px; }
 .board-head label { margin: 0; }
-.board-head .visit { margin-left: auto; font-weight: 550; font-size: 14px; }
+.board-actions { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+.board-actions .archived-link { font-weight: 550; font-size: 14px; color: var(--ink-2); }
+.board-actions .archived-link:hover { color: var(--ink); }
+.board-actions .visit { font-weight: 550; font-size: 14px; }
+
+.archived-title { margin: 0 0 16px; }
+.archived-title .count { color: var(--ink-2); font-weight: 500; }
+.archived-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; align-items: start; }
+
+/* Task card actions (archive / delete) */
+.card-actions { display: flex; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.card-actions button { background: none; border: 0; padding: 2px 0; font-size: 12px; font-weight: 550; color: var(--ink-2); cursor: pointer; }
+.card-actions button:hover { background: none; color: var(--accent); text-decoration: underline; }
+.card-actions .delete-task { color: var(--danger); margin-left: auto; }
 
 .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; align-items: start; }
 .column { background: var(--surface-2); border-radius: var(--radius); padding: 14px; }
@@ -267,7 +280,15 @@ label input, label select, label textarea { margin-top: 6px; font-weight: 400; }
 /* ==========================================================================
    Task detail
    ========================================================================== */
-.task-detail .crumbs { margin-bottom: 16px; font-weight: 550; }
+.task-topbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.task-detail .crumbs { margin: 0; font-weight: 550; }
+.task-actions { margin-left: auto; display: flex; gap: 8px; }
+.btn-ghost.danger { color: var(--danger); border-color: #f3c6c6; }
+.btn-ghost.danger:hover { background: var(--danger-weak); color: var(--danger); border-color: var(--danger); }
+.archived-banner {
+  background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
+  border-radius: var(--radius-sm); padding: 9px 12px; font-size: 14px; margin: 0 0 16px;
+}
 .task-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
 .task-grid .shot { width: 100%; border: 1px solid var(--border); border-radius: var(--radius); cursor: zoom-in; box-shadow: var(--shadow-sm); }
 .task-grid .shot.zoomed { position: fixed; inset: 5%; width: 90%; height: 90%; object-fit: contain; background: rgba(10,12,16,.86); z-index: 50; cursor: zoom-out; border: 0; }

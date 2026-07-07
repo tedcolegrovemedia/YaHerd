@@ -23,6 +23,7 @@ function comment_row_out(array $r): array {
         'fallback_y'      => (int)$r['fallback_y'],
         'viewport_w'      => (int)$r['viewport_w'],
         'has_screenshot'  => !empty($r['screenshot_path']),
+        'archived'        => !empty($r['archived_at']),
         'reply_count'     => isset($r['reply_count']) ? (int)$r['reply_count'] : 0,
         'created_at'      => $r['created_at'],
         'updated_at'      => $r['updated_at'],
@@ -50,6 +51,10 @@ route('GET', '#^/api/comments$#', function () {
             LEFT JOIN users a ON a.id = c.assignee_id
             WHERE c.project_id = ?';
     $params = [$projectId];
+    // Archived tasks are hidden by default (incl. on the live page). ?archived=1
+    // returns only archived ones.
+    $sql .= !empty($_GET['archived']) ? ' AND c.archived_at IS NOT NULL'
+                                      : ' AND c.archived_at IS NULL';
     if (!empty($_GET['page_path'])) {
         $sql .= ' AND c.page_path = ?';
         $params[] = substr($_GET['page_path'], 0, 500);
@@ -173,6 +178,18 @@ route('PATCH', '#^/api/comments/(\d+)/assignee$#', function ($id) {
     db()->prepare('UPDATE comments SET assignee_id = ? WHERE id = ?')->execute([$assigneeId, (int)$id]);
     if ($assigneeId !== null) notify_assigned($c, $target, (int)$u['id']);
     json_out(['ok' => true, 'assignee_id' => $assigneeId]);
+});
+
+// Archive / restore a task. Reversible, so any project member may do it.
+route('PATCH', '#^/api/comments/(\d+)/archive$#', function ($id) {
+    $u = require_auth();
+    $c = fetch_comment_or_404((int)$id);
+    require_project_member($u, (int)$c['project_id']);
+    $in = read_json_body();
+    $archived = !empty($in['archived']);
+    db()->prepare('UPDATE comments SET archived_at = ' . ($archived ? 'NOW()' : 'NULL') . ' WHERE id = ?')
+        ->execute([(int)$id]);
+    json_out(['ok' => true, 'archived' => $archived]);
 });
 
 route('DELETE', '#^/api/comments/(\d+)$#', function ($id) {

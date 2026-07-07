@@ -32,8 +32,20 @@ $members = $stmt->fetchAll();
 
 layout_top('Task #' . $id, $me);
 ?>
+<?php $isArchived = !empty($c['archived_at']);
+      $canDelete = $me['role'] === 'admin' || (int)$c['author_id'] === (int)$me['id']; ?>
 <div class="task-detail">
-  <p class="crumbs"><a href="/board?project=<?= (int)$c['project_id'] ?>">← <?= e($c['project_name']) ?> board</a></p>
+  <div class="task-topbar">
+    <p class="crumbs"><a href="/board?project=<?= (int)$c['project_id'] ?>">← <?= e($c['project_name']) ?> board</a></p>
+    <div class="task-actions" data-project="<?= (int)$c['project_id'] ?>">
+      <button type="button" class="archive-task btn-ghost" data-comment="<?= (int)$c['id'] ?>"
+              data-archived="<?= $isArchived ? '1' : '0' ?>"><?= $isArchived ? 'Restore' : 'Archive' ?></button>
+      <?php if ($canDelete): ?>
+        <button type="button" class="delete-task btn-ghost danger" data-comment="<?= (int)$c['id'] ?>">Delete</button>
+      <?php endif; ?>
+    </div>
+  </div>
+  <?php if ($isArchived): ?><p class="archived-banner">🗄 This task is archived — it's hidden from the board and the live page.</p><?php endif; ?>
   <div class="task-grid">
     <div>
       <?php if ($c['screenshot_path']): ?>

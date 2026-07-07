@@ -55,6 +55,7 @@ CREATE TABLE comments (
   page_path       VARCHAR(500)  NOT NULL,
   body            TEXT NOT NULL,
   status          ENUM('queued','working_on','complete') NOT NULL DEFAULT 'queued',
+  archived_at     DATETIME NULL,
   anchor_selector VARCHAR(1000) NULL,
   anchor_offset_x FLOAT NULL,
   anchor_offset_y FLOAT NULL,

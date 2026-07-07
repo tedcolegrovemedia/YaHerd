@@ -69,6 +69,12 @@ foreach (['notify_project_added', 'notify_assigned', 'notify_replies', 'notify_s
     }
 }
 
+// Task archiving.
+if (!db()->query("SHOW COLUMNS FROM comments LIKE 'archived_at'")->fetch()) {
+    db()->exec('ALTER TABLE comments ADD COLUMN archived_at DATETIME NULL AFTER status');
+    echo "added comments.archived_at\n";
+}
+
 // In-app notification inbox.
 db()->exec(
     'CREATE TABLE IF NOT EXISTS notifications (

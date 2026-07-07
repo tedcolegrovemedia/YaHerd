@@ -256,6 +256,44 @@ document.addEventListener('click', async (ev) => {
   }
 });
 
+// ----- Tasks: archive / restore / delete -----
+document.addEventListener('click', async (ev) => {
+  const arch = ev.target.closest('.archive-task');
+  const del = ev.target.closest('.delete-task');
+  if (!arch && !del) return;
+
+  const btn = arch || del;
+  const id = btn.dataset.comment;
+  const onDetail = btn.closest('.task-detail');
+  const boardHref = () => {
+    const acts = btn.closest('.task-actions');
+    return `/board?project=${acts ? acts.dataset.project : ''}`;
+  };
+
+  if (arch) {
+    const makeArchived = arch.dataset.archived === '0';
+    try {
+      await api('PATCH', `/api/comments/${id}/archive`, { archived: makeArchived });
+      toast(makeArchived ? 'Task archived' : 'Task restored');
+      if (onDetail) { location.href = boardHref(); return; }
+      const card = arch.closest('.card');
+      if (card) card.remove();
+      refreshColumnCounts();
+    } catch (e) { toast(e.message, true); }
+    return;
+  }
+
+  if (!confirm('Delete this task permanently? This removes the comment, its replies, and screenshot. This cannot be undone.')) return;
+  try {
+    await api('DELETE', `/api/comments/${id}`);
+    toast('Task deleted');
+    if (onDetail) { location.href = boardHref(); return; }
+    const card = del.closest('.card');
+    if (card) card.remove();
+    refreshColumnCounts();
+  } catch (e) { toast(e.message, true); }
+});
+
 // ----- Admin: delete a user -----
 document.addEventListener('click', async (ev) => {
   const btn = ev.target.closest('.delete-user');

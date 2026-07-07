@@ -21,11 +21,12 @@ if ($projects) {
                 SUM(status = 'queued')     AS queued,
                 SUM(status = 'working_on') AS working_on,
                 SUM(status = 'complete')   AS complete
-         FROM comments WHERE project_id IN ($ids) GROUP BY project_id"
+         FROM comments WHERE project_id IN ($ids) AND archived_at IS NULL GROUP BY project_id"
     ) as $r) $stats[(int)$r['project_id']] = $r;
     foreach (db()->query(
         "SELECT c.project_id, MAX(c.id) AS latest_shot
          FROM comments c WHERE c.project_id IN ($ids) AND c.screenshot_path IS NOT NULL
+           AND c.archived_at IS NULL
          GROUP BY c.project_id"
     ) as $r) $stats[(int)$r['project_id']]['latest_shot'] = (int)$r['latest_shot'];
 }
