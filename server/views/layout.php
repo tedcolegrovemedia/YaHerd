@@ -24,22 +24,17 @@ function layout_top(string $title, ?array $me = null): void {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#4f46e5">
+<meta name="theme-color" content="#2262e4">
 <title><?= e($title) ?> — YaHerd</title>
+<link rel="icon" type="image/png" href="/assets/favicon.png?v=<?= filemtime(dirname(__DIR__) . '/public/assets/favicon.png') ?>">
+<link rel="apple-touch-icon" href="/assets/favicon.png?v=<?= filemtime(dirname(__DIR__) . '/public/assets/favicon.png') ?>">
 <link rel="stylesheet" href="/assets/dashboard.css?v=<?= filemtime(dirname(__DIR__) . '/public/assets/dashboard.css') ?>">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="topbar">
   <a class="brand" href="/" aria-label="YaHerd home">
-    <span class="brand-mark" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
-        <circle cx="7" cy="9" r="3" fill="currentColor" opacity=".55"/>
-        <circle cx="17" cy="9" r="3" fill="currentColor" opacity=".55"/>
-        <circle cx="12" cy="15" r="3.4" fill="currentColor"/>
-      </svg>
-    </span>
-    <span class="brand-word">YaHerd</span>
+    <img class="brand-logo" src="/assets/yaherd-logo.png?v=<?= filemtime(dirname(__DIR__) . '/public/assets/yaherd-logo.png') ?>" alt="YaHerd" width="124" height="35">
   </a>
   <?php if ($me): ?>
   <nav aria-label="Primary">

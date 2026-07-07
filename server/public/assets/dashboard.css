@@ -131,10 +131,9 @@ label input, label select, label textarea { margin-top: 6px; font-weight: 400; }
   border-bottom: 1px solid var(--border);
   padding: 0 24px; height: 58px;
 }
-.brand { display: inline-flex; align-items: center; gap: 9px; color: var(--ink); font-weight: 750; font-size: 17px; letter-spacing: -.02em; }
+.brand { display: inline-flex; align-items: center; }
 .brand:hover { text-decoration: none; }
-.brand-mark { display: inline-flex; color: var(--accent); }
-.brand-word { line-height: 1; }
+.brand-logo { display: block; height: 34px; width: auto; }
 
 .topbar nav { display: flex; gap: 4px; flex: 1; }
 .topbar nav a {
@@ -460,7 +459,7 @@ label.check input { width: auto; margin: 0; }
   .topbar { gap: 12px; padding: 0 14px; }
   .topbar nav { gap: 2px; }
   .topbar nav a { padding: 7px 9px; }
-  .brand-word { display: none; }
+  .brand-logo { height: 36px; }
   .board-head { gap: 10px; }
   .board-head form.inline, .board-head select { width: 100%; }
   .board-head select { min-width: 0; }
