@@ -231,7 +231,9 @@ route('POST', '#^/api/comments/(\d+)/replies$#', function ($id) {
     db()->prepare('INSERT INTO comment_replies (comment_id, author_id, body) VALUES (?, ?, ?)')
         ->execute([(int)$id, (int)$u['id'], $body]);
     $replyId = (int)db()->lastInsertId();   // capture before notify runs more queries
-    notify_reply($c, $body, (int)$u['id']);
+    $mentioned = parse_mentions($body, project_members((int)$c['project_id']));
+    notify_mention($c, $mentioned, $body, (int)$u['id'], (string)$u['display_name']);
+    notify_reply($c, $body, (int)$u['id'], array_map(fn($m) => (int)$m['id'], $mentioned));
     json_out(['id' => $replyId], 201);
 });
 

@@ -10,6 +10,7 @@ const NOTIFY_PREF_COLUMN = [
     'assigned'      => 'notify_assigned',
     'reply'         => 'notify_replies',
     'status'        => 'notify_status',
+    'mention'       => 'notify_mention',
 ];
 
 const NOTIFY_STATUS_LABEL = [
@@ -127,9 +128,12 @@ function notify_assigned(array $comment, array $assignee, int $actorId): void {
     notify_user($assignee, 'assigned', $subject, $body, $link);
 }
 
-function notify_reply(array $comment, string $replyBody, int $actorId): void {
+// $excludeIds: users already notified about this reply another way (i.e. those
+// @mentioned in it) — they get the mention notice instead of a duplicate reply.
+function notify_reply(array $comment, string $replyBody, int $actorId, array $excludeIds = []): void {
     $base = app_base_url();
     $tid  = (int)$comment['id'];
+    $exclude = array_flip(array_map('intval', $excludeIds));
     $ids  = [];
     if ($comment['author_id']   !== null) $ids[] = (int)$comment['author_id'];
     if ($comment['assignee_id'] !== null) $ids[] = (int)$comment['assignee_id'];
@@ -142,6 +146,7 @@ function notify_reply(array $comment, string $replyBody, int $actorId): void {
     $proj = notify_project_name($comment);
     foreach (notify_fetch_users($ids) as $u) {
         if ((int)$u['id'] === $actorId) continue;
+        if (isset($exclude[(int)$u['id']])) continue;
         $link = "/task?id=$tid";
         $subject = "New reply on task #$tid in \"$proj\"";
         $body = "Hi {$u['display_name']},\n\n"
@@ -169,5 +174,25 @@ function notify_status(array $comment, string $newStatus, int $actorId): void {
               . "Task #$tid (\"$excerpt\") in \"$proj\" was moved to \"$label\".\n\n"
               . "View the task:\n  $base$link\n";
         notify_user($u, 'status', $subject, $body, $link);
+    }
+}
+
+// $mentioned: rows of {id, display_name} produced by parse_mentions().
+// $actorName is the person who wrote the reply, for the message.
+function notify_mention(array $comment, array $mentioned, string $replyBody, int $actorId, string $actorName): void {
+    if (!$mentioned) return;
+    $base = app_base_url();
+    $tid  = (int)$comment['id'];
+    $proj = notify_project_name($comment);
+    $link = "/task?id=$tid";
+    $ids  = array_map(fn($m) => (int)$m['id'], $mentioned);
+    foreach (notify_fetch_users($ids) as $u) {
+        if ((int)$u['id'] === $actorId) continue;   // no self-mention notice
+        $subject = "$actorName mentioned you on task #$tid in \"$proj\"";
+        $body = "Hi {$u['display_name']},\n\n"
+              . "$actorName mentioned you in a reply on task #$tid in \"$proj\":\n\n"
+              . rtrim($replyBody) . "\n\n"
+              . "View the task:\n  $base$link\n";
+        notify_user($u, 'mention', $subject, $body, $link);
     }
 }

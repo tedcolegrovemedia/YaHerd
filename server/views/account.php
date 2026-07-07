@@ -64,6 +64,7 @@ $pref = fn(string $c) => (int)($me[$c] ?? 1) ? 'checked' : '';
       <label class="check"><input type="checkbox" class="notify-pref" data-pref="notify_assigned" <?= $pref('notify_assigned') ?>> When I'm assigned a task</label>
       <label class="check"><input type="checkbox" class="notify-pref" data-pref="notify_replies" <?= $pref('notify_replies') ?>> When someone replies on my task</label>
       <label class="check"><input type="checkbox" class="notify-pref" data-pref="notify_status" <?= $pref('notify_status') ?>> When my task changes status</label>
+      <label class="check"><input type="checkbox" class="notify-pref" data-pref="notify_mention" <?= $pref('notify_mention') ?>> When someone @mentions me</label>
     </div>
     <p class="hint">Account &amp; password emails are always sent.</p>
   </div>

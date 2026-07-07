@@ -410,3 +410,91 @@ document.addEventListener('click', async (ev) => {
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 })();
+
+// ----- Task detail: @mention autocomplete in the reply box -----
+(function initMention() {
+  const form = document.getElementById('reply-form');
+  const dataEl = document.getElementById('task-members');
+  if (!form || !dataEl) return;
+  const ta = form.querySelector('textarea[name=body]');
+  let members = [];
+  try { members = JSON.parse(dataEl.textContent) || []; } catch (_) {}
+  if (!ta || !members.length) return;
+
+  const menu = document.createElement('div');
+  menu.className = 'mention-menu';
+  menu.hidden = true;
+  form.style.position = 'relative';
+  form.appendChild(menu);
+  let activeIndex = -1, atPos = -1, current = [];
+
+  // The @query being typed at the caret, or null. Trigger must sit at the start
+  // of the text or right after whitespace so emails etc. don't fire it. The
+  // query runs to the caret and may include spaces (display names have them).
+  function context() {
+    if (ta.selectionStart !== ta.selectionEnd) return null;
+    const pos = ta.selectionStart;
+    const upto = ta.value.slice(0, pos);
+    const at = upto.lastIndexOf('@');
+    if (at < 0) return null;
+    if (at > 0 && !/\s/.test(upto[at - 1])) return null;
+    const q = upto.slice(at + 1);
+    if (q.includes('\n') || q.length > 40) return null;
+    return { at, q };
+  }
+
+  function matches(q) {
+    const needle = q.trim().toLowerCase();
+    return members.filter((m) => needle === '' || m.name.toLowerCase().includes(needle)).slice(0, 8);
+  }
+
+  function close() { menu.hidden = true; menu.innerHTML = ''; activeIndex = -1; atPos = -1; }
+
+  function render() {
+    const ctx = context();
+    if (!ctx) { close(); return; }
+    current = matches(ctx.q);
+    if (!current.length) { close(); return; }
+    atPos = ctx.at;
+    if (activeIndex >= current.length) activeIndex = -1;
+    menu.innerHTML = '';
+    current.forEach((m, i) => {
+      const opt = document.createElement('div');
+      opt.className = 'mention-opt' + (i === activeIndex ? ' active' : '');
+      opt.dataset.id = m.id;
+      opt.textContent = m.name;
+      menu.appendChild(opt);
+    });
+    menu.hidden = false;
+  }
+
+  function pick(id) {
+    const m = members.find((u) => u.id === +id);
+    if (!m || atPos < 0) return;
+    const pos = ta.selectionStart;
+    const before = ta.value.slice(0, atPos);
+    const after = ta.value.slice(pos);
+    const insert = '@' + m.name + ' ';
+    ta.value = before + insert + after;
+    const caret = (before + insert).length;
+    ta.setSelectionRange(caret, caret);
+    ta.focus();
+    close();
+  }
+
+  ta.addEventListener('input', render);
+  ta.addEventListener('click', render);
+  ta.addEventListener('keydown', (e) => {
+    if (menu.hidden) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex = Math.min(activeIndex + 1, current.length - 1); render(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex = Math.max(activeIndex - 1, 0); render(); }
+    else if (e.key === 'Enter' || e.key === 'Tab') {
+      if (activeIndex >= 0 && current[activeIndex]) { e.preventDefault(); pick(current[activeIndex].id); }
+    } else if (e.key === 'Escape') { e.preventDefault(); close(); }
+  });
+  menu.addEventListener('mousedown', (e) => {
+    const opt = e.target.closest('.mention-opt');
+    if (opt) { e.preventDefault(); pick(opt.dataset.id); }
+  });
+  ta.addEventListener('blur', () => setTimeout(close, 120));
+})();

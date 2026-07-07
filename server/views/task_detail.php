@@ -21,14 +21,7 @@ $stmt = db()->prepare(
 $stmt->execute([$id]);
 $replies = $stmt->fetchAll();
 
-$stmt = db()->prepare(
-    "SELECT DISTINCT u.id, u.display_name FROM users u
-     LEFT JOIN project_users pu ON pu.user_id = u.id AND pu.project_id = ?
-     WHERE u.is_active = 1 AND (pu.project_id IS NOT NULL OR u.role = 'admin')
-     ORDER BY u.display_name"
-);
-$stmt->execute([(int)$c['project_id']]);
-$members = $stmt->fetchAll();
+$members = project_members((int)$c['project_id']);
 
 layout_top('Task #' . $id, $me);
 ?>
@@ -58,7 +51,7 @@ layout_top('Task #' . $id, $me);
     </div>
     <div>
       <h1>Task #<?= (int)$c['id'] ?></h1>
-      <p class="taskbody"><?= nl2br(e($c['body'])) ?></p>
+      <p class="taskbody"><?= render_mentions($c['body'], $members) ?></p>
       <dl>
         <dt>Status</dt>
         <dd>
@@ -95,15 +88,19 @@ layout_top('Task #' . $id, $me);
         <?php foreach ($replies as $r): ?>
           <div class="reply">
             <p class="meta"><?= e($r['author_name']) ?> · <?= e(date('M j, H:i', strtotime($r['created_at']))) ?></p>
-            <p><?= nl2br(e($r['body'])) ?></p>
+            <p><?= render_mentions($r['body'], $members) ?></p>
           </div>
         <?php endforeach; ?>
         <?php if (!$replies): ?><p class="empty">No replies yet.</p><?php endif; ?>
       </div>
       <form id="reply-form" data-comment="<?= (int)$c['id'] ?>">
-        <textarea name="body" rows="3" placeholder="Write a reply…" required></textarea>
+        <textarea name="body" rows="3" placeholder="Write a reply… use @ to mention someone" required></textarea>
         <button type="submit">Reply</button>
       </form>
+      <script type="application/json" id="task-members"><?= json_encode(
+          array_map(fn($m) => ['id' => (int)$m['id'], 'name' => $m['display_name']], $members),
+          JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG
+      ) ?></script>
     </div>
   </div>
 </div>

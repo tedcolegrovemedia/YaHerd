@@ -62,7 +62,7 @@ ensure_author_set_null('comments', 'author_id');
 ensure_author_set_null('comment_replies', 'author_id');
 
 // Per-user email notification preferences (default on).
-foreach (['notify_project_added', 'notify_assigned', 'notify_replies', 'notify_status'] as $col) {
+foreach (['notify_project_added', 'notify_assigned', 'notify_replies', 'notify_status', 'notify_mention'] as $col) {
     if (!db()->query("SHOW COLUMNS FROM users LIKE '$col'")->fetch()) {
         db()->exec("ALTER TABLE users ADD COLUMN $col TINYINT(1) NOT NULL DEFAULT 1");
         echo "added users.$col\n";

@@ -56,6 +56,58 @@ function e(?string $s): string {
     return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 }
 
+// Active users who can see a project's tasks: its assigned members plus all
+// admins. Returned as rows of {id, display_name}, ordered by name. Used for the
+// assignee picker, @mention matching, and @mention autocomplete.
+function project_members(int $projectId): array {
+    $stmt = db()->prepare(
+        "SELECT DISTINCT u.id, u.display_name FROM users u
+         LEFT JOIN project_users pu ON pu.user_id = u.id AND pu.project_id = ?
+         WHERE u.is_active = 1 AND (pu.project_id IS NOT NULL OR u.role = 'admin')
+         ORDER BY u.display_name"
+    );
+    $stmt->execute([$projectId]);
+    return $stmt->fetchAll();
+}
+
+// Members @-mentioned in $text, matched against their display name (the token
+// the autocomplete inserts). Longest names first so "@Dev Dana" wins over a
+// member merely named "Dev"; a letter/digit/underscore right after the name
+// blocks partial hits (so "@Dana" doesn't match a member "Dan").
+function parse_mentions(string $text, array $members): array {
+    $ordered = $members;
+    usort($ordered, fn($a, $b) => mb_strlen($b['display_name']) <=> mb_strlen($a['display_name']));
+    $hits = [];
+    foreach ($ordered as $m) {
+        $name = trim((string)$m['display_name']);
+        if ($name === '') continue;
+        if (preg_match('/@' . preg_quote($name, '/') . '(?![\p{L}\p{N}_])/iu', $text)) {
+            $hits[(int)$m['id']] = ['id' => (int)$m['id'], 'display_name' => $m['display_name']];
+        }
+    }
+    return array_values($hits);
+}
+
+// Escape $text for display, wrapping recognized @mentions in a highlight span
+// and converting newlines to <br>. Names are matched in their escaped form so
+// display names containing HTML-special characters still line up.
+function render_mentions(string $text, array $members): string {
+    $html = e($text);
+    $ordered = $members;
+    usort($ordered, fn($a, $b) => mb_strlen($b['display_name']) <=> mb_strlen($a['display_name']));
+    foreach ($ordered as $m) {
+        $name = trim((string)$m['display_name']);
+        if ($name === '') continue;
+        $escName = e($name);
+        $html = preg_replace(
+            '/@' . preg_quote($escName, '/') . '(?![\p{L}\p{N}_])/u',
+            '<span class="mention">@' . $escName . '</span>',
+            $html
+        );
+    }
+    return nl2br($html);
+}
+
 // Compact relative time, e.g. "just now", "5m ago", "3h ago", "Jul 6".
 function time_ago(string $datetime): string {
     $ts = strtotime($datetime);

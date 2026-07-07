@@ -14,6 +14,7 @@ CREATE TABLE users (
   notify_assigned      TINYINT(1) NOT NULL DEFAULT 1,
   notify_replies       TINYINT(1) NOT NULL DEFAULT 1,
   notify_status        TINYINT(1) NOT NULL DEFAULT 1,
+  notify_mention       TINYINT(1) NOT NULL DEFAULT 1,
   created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 

@@ -52,7 +52,7 @@ route('POST', '#^/api/me/password$#', function () {
 route('POST', '#^/api/me/notification-prefs$#', function () {
     $u = require_auth();
     $in = read_json_body();
-    $cols = ['notify_project_added', 'notify_assigned', 'notify_replies', 'notify_status'];
+    $cols = ['notify_project_added', 'notify_assigned', 'notify_replies', 'notify_status', 'notify_mention'];
     $fields = [];
     $params = [];
     foreach ($cols as $c) {
