@@ -20,7 +20,7 @@ const NOTIFY_STATUS_LABEL = [
 // Notify a user: create an in-app inbox record (when a $link is given) and
 // send the email (gated by the per-category preference). Callers must already
 // have excluded the actor and any user they don't want notified.
-function notify_user(array $u, string $category, string $subject, string $body, ?string $link = null): void {
+function notify_user(array $u, string $category, string $subject, string $body, ?string $link = null, ?string $htmlInner = null): void {
     if (!(int)($u['is_active'] ?? 1)) return;
 
     // In-app notification for activity categories (those carrying a deep link).
@@ -37,8 +37,14 @@ function notify_user(array $u, string $category, string $subject, string $body, 
     if (empty($u['email'])) return;
     $col = NOTIFY_PREF_COLUMN[$category] ?? null;
     if ($col !== null && (int)($u[$col] ?? 1) !== 1) return;
-    $footer = "\n\n—\nManage your email notifications: " . app_base_url() . "/account\n";
-    send_mail($u['email'], $u['display_name'] ?? '', $subject, $body . $footer);
+    $manageUrl = app_base_url() . '/account';
+    $footer = "\n\n—\nManage your email notifications: " . $manageUrl . "\n";
+    $html = $htmlInner === null ? null : email_layout(
+        $htmlInner,
+        'Manage your email notifications in your <a href="' . email_esc($manageUrl)
+        . '" style="color:#2262e4;text-decoration:none;">account settings</a>.'
+    );
+    send_mail($u['email'], $u['display_name'] ?? '', $subject, $body . $footer, $html);
 }
 
 // Unread in-app notification count for the avatar badge. Never throws.
@@ -81,19 +87,22 @@ function notify_password_changed(array $user, ?string $newPassword): void {
     $app  = mail_from_name();
     $subject = "Your $app password was changed";
     if ($newPassword !== null) {
-        $body = "Hi {$user['display_name']},\n\n"
-              . "An administrator has reset your $app password.\n\n"
-              . "Your new password:\n  $newPassword\n\n"
-              . "Sign in: $base/login\n\n"
-              . "For security, change it from the Account page after signing in. "
-              . "If you didn't expect this, contact your administrator.";
+        $blocks = [
+            ['text', "An administrator has reset your $app password."],
+            ['fields', ['New password' => $newPassword]],
+            ['button', 'Sign in', "$base/login"],
+            ['note', "For security, change it from the Account page after signing in. "
+                   . "If you didn't expect this, contact your administrator."],
+        ];
     } else {
-        $body = "Hi {$user['display_name']},\n\n"
-              . "Your $app password was just changed.\n\n"
-              . "If this wasn't you, contact your administrator immediately.\n\n"
-              . "Sign in: $base/login";
+        $blocks = [
+            ['text', "Your $app password was just changed."],
+            ['note', "If this wasn't you, contact your administrator immediately."],
+            ['button', 'Sign in', "$base/login"],
+        ];
     }
-    notify_user($user, 'password', $subject, $body);   // 'password' => always-on
+    ['text' => $body, 'html' => $inner] = email_render($user['display_name'], $blocks);
+    notify_user($user, 'password', $subject, $body, null, $inner);   // 'password' => always-on
 }
 
 // ---- Projects ---------------------------------------------------------------
@@ -105,10 +114,11 @@ function notify_project_added(array $project, array $userIds, int $actorId): voi
         if ((int)$u['id'] === $actorId) continue;
         $subject = "You've been added to \"{$project['name']}\" on $app";
         $link = "/board?project=" . (int)$project['id'];
-        $body = "Hi {$u['display_name']},\n\n"
-              . "You now have access to the project \"{$project['name']}\" on $app.\n\n"
-              . "Open its board:\n  $base$link\n";
-        notify_user($u, 'project_added', $subject, $body, $link);
+        ['text' => $body, 'html' => $inner] = email_render($u['display_name'], [
+            ['text', "You now have access to the project \"{$project['name']}\" on $app."],
+            ['button', 'Open project board', "$base$link"],
+        ]);
+        notify_user($u, 'project_added', $subject, $body, $link, $inner);
     }
 }
 
@@ -122,10 +132,11 @@ function notify_assigned(array $comment, array $assignee, int $actorId): void {
     $proj = notify_project_name($comment);
     $link = "/task?id=$tid";
     $subject = "You were assigned task #$tid in \"$proj\"";
-    $body = "Hi {$assignee['display_name']},\n\n"
-          . "You've been assigned task #$tid (\"$excerpt\") in the project \"$proj\".\n\n"
-          . "View it:\n  $base$link\n";
-    notify_user($assignee, 'assigned', $subject, $body, $link);
+    ['text' => $body, 'html' => $inner] = email_render($assignee['display_name'], [
+        ['text', "You've been assigned task #$tid (\"$excerpt\") in the project \"$proj\"."],
+        ['button', 'View task', "$base$link"],
+    ]);
+    notify_user($assignee, 'assigned', $subject, $body, $link, $inner);
 }
 
 // $excludeIds: users already notified about this reply another way (i.e. those
@@ -149,11 +160,12 @@ function notify_reply(array $comment, string $replyBody, int $actorId, array $ex
         if (isset($exclude[(int)$u['id']])) continue;
         $link = "/task?id=$tid";
         $subject = "New reply on task #$tid in \"$proj\"";
-        $body = "Hi {$u['display_name']},\n\n"
-              . "There's a new reply on task #$tid (\"$excerpt\") in \"$proj\":\n\n"
-              . rtrim($replyBody) . "\n\n"
-              . "View the task:\n  $base$link\n";
-        notify_user($u, 'reply', $subject, $body, $link);
+        ['text' => $body, 'html' => $inner] = email_render($u['display_name'], [
+            ['text', "There's a new reply on task #$tid (\"$excerpt\") in \"$proj\":"],
+            ['quote', rtrim($replyBody)],
+            ['button', 'View the task', "$base$link"],
+        ]);
+        notify_user($u, 'reply', $subject, $body, $link, $inner);
     }
 }
 
@@ -170,10 +182,11 @@ function notify_status(array $comment, string $newStatus, int $actorId): void {
         if ((int)$u['id'] === $actorId) continue;
         $link = "/task?id=$tid";
         $subject = "Task #$tid in \"$proj\" is now \"$label\"";
-        $body = "Hi {$u['display_name']},\n\n"
-              . "Task #$tid (\"$excerpt\") in \"$proj\" was moved to \"$label\".\n\n"
-              . "View the task:\n  $base$link\n";
-        notify_user($u, 'status', $subject, $body, $link);
+        ['text' => $body, 'html' => $inner] = email_render($u['display_name'], [
+            ['text', "Task #$tid (\"$excerpt\") in \"$proj\" was moved to \"$label\"."],
+            ['button', 'View the task', "$base$link"],
+        ]);
+        notify_user($u, 'status', $subject, $body, $link, $inner);
     }
 }
 
@@ -189,10 +202,11 @@ function notify_mention(array $comment, array $mentioned, string $replyBody, int
     foreach (notify_fetch_users($ids) as $u) {
         if ((int)$u['id'] === $actorId) continue;   // no self-mention notice
         $subject = "$actorName mentioned you on task #$tid in \"$proj\"";
-        $body = "Hi {$u['display_name']},\n\n"
-              . "$actorName mentioned you in a reply on task #$tid in \"$proj\":\n\n"
-              . rtrim($replyBody) . "\n\n"
-              . "View the task:\n  $base$link\n";
-        notify_user($u, 'mention', $subject, $body, $link);
+        ['text' => $body, 'html' => $inner] = email_render($u['display_name'], [
+            ['text', "$actorName mentioned you in a reply on task #$tid in \"$proj\":"],
+            ['quote', rtrim($replyBody)],
+            ['button', 'View the task', "$base$link"],
+        ]);
+        notify_user($u, 'mention', $subject, $body, $link, $inner);
     }
 }
