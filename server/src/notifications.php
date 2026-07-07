@@ -16,13 +16,39 @@ const NOTIFY_STATUS_LABEL = [
     'queued' => 'Queued', 'working_on' => 'Working on', 'complete' => 'Complete',
 ];
 
-// Send one notification to a user row, respecting active flag + category pref.
-function notify_user(array $u, string $category, string $subject, string $body): void {
-    if (empty($u['email']) || !(int)($u['is_active'] ?? 1)) return;
-    $col = NOTIFY_PREF_COLUMN[$category] ?? null;   // null => always-on category
+// Notify a user: create an in-app inbox record (when a $link is given) and
+// send the email (gated by the per-category preference). Callers must already
+// have excluded the actor and any user they don't want notified.
+function notify_user(array $u, string $category, string $subject, string $body, ?string $link = null): void {
+    if (!(int)($u['is_active'] ?? 1)) return;
+
+    // In-app notification for activity categories (those carrying a deep link).
+    if ($link !== null) {
+        try {
+            db()->prepare('INSERT INTO notifications (user_id, category, message, link) VALUES (?, ?, ?, ?)')
+                ->execute([(int)$u['id'], $category, mb_substr($subject, 0, 255), mb_substr($link, 0, 500)]);
+        } catch (Throwable $e) {
+            error_log('notification insert failed: ' . $e->getMessage());
+        }
+    }
+
+    // Email, gated by the per-category preference (null => always-on).
+    if (empty($u['email'])) return;
+    $col = NOTIFY_PREF_COLUMN[$category] ?? null;
     if ($col !== null && (int)($u[$col] ?? 1) !== 1) return;
     $footer = "\n\n—\nManage your email notifications: " . app_base_url() . "/account\n";
     send_mail($u['email'], $u['display_name'] ?? '', $subject, $body . $footer);
+}
+
+// Unread in-app notification count for the avatar badge. Never throws.
+function unread_notification_count(int $userId): int {
+    try {
+        $stmt = db()->prepare('SELECT COUNT(*) FROM notifications WHERE user_id = ? AND read_at IS NULL');
+        $stmt->execute([$userId]);
+        return (int)$stmt->fetchColumn();
+    } catch (Throwable $e) {
+        return 0;   // table may not exist yet (pre-migration)
+    }
 }
 
 // Load full user rows (with pref columns) for a set of ids, de-duplicated.
@@ -70,10 +96,11 @@ function notify_project_added(array $project, array $userIds, int $actorId): voi
     foreach (notify_fetch_users($userIds) as $u) {
         if ((int)$u['id'] === $actorId) continue;
         $subject = "You've been added to \"{$project['name']}\" on $app";
+        $link = "/board?project=" . (int)$project['id'];
         $body = "Hi {$u['display_name']},\n\n"
               . "You now have access to the project \"{$project['name']}\" on $app.\n\n"
-              . "Open its board:\n  $base/board?project=" . (int)$project['id'] . "\n";
-        notify_user($u, 'project_added', $subject, $body);
+              . "Open its board:\n  $base$link\n";
+        notify_user($u, 'project_added', $subject, $body, $link);
     }
 }
 
@@ -84,11 +111,12 @@ function notify_assigned(array $comment, array $assignee, int $actorId): void {
     $base = app_base_url();
     $tid  = (int)$comment['id'];
     $excerpt = notify_task_excerpt($comment);
+    $link = "/task?id=$tid";
     $subject = "You were assigned task #$tid";
     $body = "Hi {$assignee['display_name']},\n\n"
           . "You've been assigned task #$tid (\"$excerpt\").\n\n"
-          . "View it:\n  $base/task?id=$tid\n";
-    notify_user($assignee, 'assigned', $subject, $body);
+          . "View it:\n  $base$link\n";
+    notify_user($assignee, 'assigned', $subject, $body, $link);
 }
 
 function notify_reply(array $comment, string $replyBody, int $actorId): void {
@@ -105,12 +133,13 @@ function notify_reply(array $comment, string $replyBody, int $actorId): void {
     $excerpt = notify_task_excerpt($comment);
     foreach (notify_fetch_users($ids) as $u) {
         if ((int)$u['id'] === $actorId) continue;
+        $link = "/task?id=$tid";
         $subject = "New reply on task #$tid";
         $body = "Hi {$u['display_name']},\n\n"
               . "There's a new reply on task #$tid (\"$excerpt\"):\n\n"
               . rtrim($replyBody) . "\n\n"
-              . "View the task:\n  $base/task?id=$tid\n";
-        notify_user($u, 'reply', $subject, $body);
+              . "View the task:\n  $base$link\n";
+        notify_user($u, 'reply', $subject, $body, $link);
     }
 }
 
@@ -124,10 +153,11 @@ function notify_status(array $comment, string $newStatus, int $actorId): void {
     if ($comment['assignee_id'] !== null) $ids[] = (int)$comment['assignee_id'];
     foreach (notify_fetch_users($ids) as $u) {
         if ((int)$u['id'] === $actorId) continue;
+        $link = "/task?id=$tid";
         $subject = "Task #$tid is now \"$label\"";
         $body = "Hi {$u['display_name']},\n\n"
               . "Task #$tid (\"$excerpt\") was moved to \"$label\".\n\n"
-              . "View the task:\n  $base/task?id=$tid\n";
-        notify_user($u, 'status', $subject, $body);
+              . "View the task:\n  $base$link\n";
+        notify_user($u, 'status', $subject, $body, $link);
     }
 }

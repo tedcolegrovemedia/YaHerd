@@ -55,3 +55,15 @@ function origin_matches_project(string $origin, array $project): bool {
 function e(?string $s): string {
     return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 }
+
+// Compact relative time, e.g. "just now", "5m ago", "3h ago", "Jul 6".
+function time_ago(string $datetime): string {
+    $ts = strtotime($datetime);
+    if ($ts === false) return '';
+    $diff = time() - $ts;
+    if ($diff < 60)     return 'just now';
+    if ($diff < 3600)   return floor($diff / 60) . 'm ago';
+    if ($diff < 86400)  return floor($diff / 3600) . 'h ago';
+    if ($diff < 604800) return floor($diff / 86400) . 'd ago';
+    return date('M j', $ts);
+}

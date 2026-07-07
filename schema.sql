@@ -88,3 +88,16 @@ CREATE TABLE comment_replies (
   FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
   FOREIGN KEY (author_id)  REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
+
+-- In-app notification inbox (parallel to the activity emails).
+CREATE TABLE notifications (
+  id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id    INT UNSIGNED NOT NULL,
+  category   VARCHAR(30) NOT NULL,
+  message    VARCHAR(255) NOT NULL,
+  link       VARCHAR(500) NULL,
+  read_at    DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_user_unread (user_id, read_at),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;

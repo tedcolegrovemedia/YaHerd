@@ -18,6 +18,7 @@ function user_initials(string $name): string {
 
 function layout_top(string $title, ?array $me = null): void {
     $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+    $unread = $me ? unread_notification_count((int)$me['id']) : 0;
     ?><!doctype html>
 <html lang="en">
 <head>
@@ -49,7 +50,10 @@ function layout_top(string $title, ?array $me = null): void {
   </nav>
   <div class="userbox">
     <a class="usermenu" href="/account"<?= nav_active($path, ['/account']) ?>>
-      <span class="avatar" aria-hidden="true"><?= e(user_initials($me['display_name'])) ?></span>
+      <span class="avatar-wrap">
+        <span class="avatar" aria-hidden="true"><?= e(user_initials($me['display_name'])) ?></span>
+        <span class="notif-badge" <?= $unread ? '' : 'hidden' ?> aria-label="<?= (int)$unread ?> unread notifications"><?= $unread > 9 ? '9+' : (int)$unread ?></span>
+      </span>
       <span class="username"><?= e($me['display_name']) ?></span>
     </a>
     <a class="btn-ghost" href="/logout">Log out</a>

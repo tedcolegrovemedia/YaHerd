@@ -49,7 +49,7 @@ route('POST', '#^/api/me/password$#', function () {
 });
 
 // Update your own email-notification preferences.
-route('POST', '#^/api/me/notifications$#', function () {
+route('POST', '#^/api/me/notification-prefs$#', function () {
     $u = require_auth();
     $in = read_json_body();
     $cols = ['notify_project_added', 'notify_assigned', 'notify_replies', 'notify_status'];
@@ -61,5 +61,33 @@ route('POST', '#^/api/me/notifications$#', function () {
     if (!$fields) json_out(['error' => 'nothing to update'], 422);
     $params[] = (int)$u['id'];
     db()->prepare('UPDATE users SET ' . implode(', ', $fields) . ' WHERE id = ?')->execute($params);
+    json_out(['ok' => true]);
+});
+
+// In-app notification inbox: unread items (newest first) + count.
+route('GET', '#^/api/me/notifications$#', function () {
+    $u = require_auth();
+    $stmt = db()->prepare(
+        'SELECT id, category, message, link, created_at
+         FROM notifications WHERE user_id = ? AND read_at IS NULL
+         ORDER BY created_at DESC LIMIT 50'
+    );
+    $stmt->execute([(int)$u['id']]);
+    $items = $stmt->fetchAll();
+    foreach ($items as &$r) $r['id'] = (int)$r['id'];
+    json_out(['notifications' => $items, 'unread_count' => count($items)]);
+});
+
+// Mark notifications read. Body {id} marks one; empty body marks all unread.
+route('POST', '#^/api/me/notifications/read$#', function () {
+    $u = require_auth();
+    $in = read_json_body();
+    if (isset($in['id'])) {
+        db()->prepare('UPDATE notifications SET read_at = NOW() WHERE id = ? AND user_id = ? AND read_at IS NULL')
+            ->execute([(int)$in['id'], (int)$u['id']]);
+    } else {
+        db()->prepare('UPDATE notifications SET read_at = NOW() WHERE user_id = ? AND read_at IS NULL')
+            ->execute([(int)$u['id']]);
+    }
     json_out(['ok' => true]);
 });

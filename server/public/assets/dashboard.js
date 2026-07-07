@@ -121,7 +121,7 @@ document.addEventListener('change', async (ev) => {
       await api('PATCH', `/api/users/${el.dataset.user}`, { is_active: el.checked });
       toast(el.checked ? 'User activated' : 'User deactivated');
     } else if (el.matches('.notify-pref')) {
-      await api('POST', '/api/me/notifications', { [el.dataset.pref]: el.checked });
+      await api('POST', '/api/me/notification-prefs', { [el.dataset.pref]: el.checked });
       toast('Notification preferences saved');
     }
   } catch (e) {
@@ -213,6 +213,47 @@ document.addEventListener('click', async (ev) => {
     btn.closest('.project-card').remove();
     toast('Project deleted');
   } catch (e) { toast(e.message, true); }
+});
+
+// ----- Notifications center (mark read) -----
+function updateNotifBadge(delta) {
+  const badge = document.querySelector('.notif-badge');
+  if (!badge) return;
+  if (delta === 0) { badge.hidden = true; return; }
+  const cur = parseInt(badge.textContent, 10) || 0;
+  const next = Math.max(0, cur - delta);
+  badge.textContent = next > 9 ? '9+' : next;
+  badge.hidden = next === 0;
+}
+
+document.addEventListener('click', async (ev) => {
+  const one = ev.target.closest('.notif-read');
+  const all = ev.target.closest('.notif-readall');
+  if (!one && !all) return;
+
+  if (one) {
+    const item = one.closest('.notif-item');
+    try {
+      await api('POST', '/api/me/notifications/read', { id: +item.dataset.id });
+      item.remove();
+      updateNotifBadge(1);
+    } catch (e) { return toast(e.message, true); }
+  } else {
+    const items = document.querySelectorAll('.notif-item');
+    try {
+      await api('POST', '/api/me/notifications/read', {});
+      items.forEach((i) => i.remove());
+      updateNotifBadge(0);
+    } catch (e) { return toast(e.message, true); }
+  }
+
+  const list = document.querySelector('.notif-list');
+  if (list && !list.querySelector('.notif-item')) {
+    const empty = document.querySelector('.notif-empty');
+    if (empty) empty.hidden = false;
+    const readall = document.querySelector('.notif-readall');
+    if (readall) readall.hidden = true;
+  }
 });
 
 // ----- Admin: delete a user -----

@@ -1,5 +1,14 @@
 <?php
 require __DIR__ . '/layout.php';
+
+$notifs = db()->prepare(
+    'SELECT id, category, message, link, created_at
+     FROM notifications WHERE user_id = ? AND read_at IS NULL
+     ORDER BY created_at DESC LIMIT 50'
+);
+$notifs->execute([(int)$me['id']]);
+$notifications = $notifs->fetchAll();
+
 layout_top('Account', $me);
 
 $pref = fn(string $c) => (int)($me[$c] ?? 1) ? 'checked' : '';
@@ -8,6 +17,27 @@ $pref = fn(string $c) => (int)($me[$c] ?? 1) ? 'checked' : '';
 <p class="hint" style="margin-top:-8px">
   Signed in as <strong><?= e($me['display_name']) ?></strong> (<?= e($me['email']) ?>)
 </p>
+
+<div class="stack notif-center" style="max-width:none;margin-bottom:24px">
+  <div class="notif-head">
+    <h3 style="margin:0">Notifications</h3>
+    <button type="button" class="btn-ghost notif-readall" <?= $notifications ? '' : 'hidden' ?>>Mark all read</button>
+  </div>
+  <div class="notif-list">
+    <?php foreach ($notifications as $n): ?>
+      <div class="notif-item" data-id="<?= (int)$n['id'] ?>">
+        <?php if ($n['link']): ?>
+          <a class="notif-msg" href="<?= e($n['link']) ?>"><?= e($n['message']) ?></a>
+        <?php else: ?>
+          <span class="notif-msg"><?= e($n['message']) ?></span>
+        <?php endif; ?>
+        <span class="notif-time"><?= e(time_ago($n['created_at'])) ?></span>
+        <button type="button" class="notif-read" title="Mark read" aria-label="Mark read">✓</button>
+      </div>
+    <?php endforeach; ?>
+  </div>
+  <p class="empty notif-empty" <?= $notifications ? 'hidden' : '' ?>>You're all caught up. 🎉</p>
+</div>
 
 <div class="account-cols">
   <div class="stack">
