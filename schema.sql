@@ -107,19 +107,33 @@ CREATE TABLE notifications (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
--- Feedback projects: one snapshotted page per review, shared by a public token.
-CREATE TABLE feedback_pages (
+-- Feedback projects: a review (e.g. one student's site) has one public share
+-- token and many snapshotted pages; notes are pinned to a page.
+CREATE TABLE feedback_reviews (
   id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   project_id    INT UNSIGNED NOT NULL,
   title         VARCHAR(150) NOT NULL,
-  url           VARCHAR(1000) NOT NULL,
-  final_url     VARCHAR(1000) NOT NULL,
+  site_url      VARCHAR(1000) NOT NULL,
   share_token   CHAR(32) NOT NULL UNIQUE,
-  snapshot_at   DATETIME NULL,
   created_by    INT UNSIGNED NULL,
   created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_project (project_id),
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE feedback_pages (
+  id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  review_id     INT UNSIGNED NOT NULL,
+  title         VARCHAR(150) NULL,
+  url           VARCHAR(1000) NOT NULL,
+  url_key       CHAR(40) NOT NULL,
+  final_url     VARCHAR(1000) NOT NULL,
+  snapshot_at   DATETIME NULL,
+  created_by    INT UNSIGNED NULL,
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_review_url (review_id, url_key),
+  FOREIGN KEY (review_id)  REFERENCES feedback_reviews(id) ON DELETE CASCADE,
   FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 

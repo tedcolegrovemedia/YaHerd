@@ -8,9 +8,19 @@
 
   const PARENT = (window.__LF && window.__LF.parentOrigin) || '*';
   let notes = [];
+  let pages = []; // other pages of the review: [{ id, url }]
   let picking = false;
   let activeId = null;
   let preview = null;
+
+  // Same canonical form as feedback_normalize_url() on the server.
+  function normUrl(u) {
+    try {
+      const x = new URL(u, document.baseURI);
+      if (!/^https?:$/.test(x.protocol)) return null;
+      return x.protocol + '//' + x.host + x.pathname.replace(/\/index\.html?$/i, '/') + x.search;
+    } catch (_) { return null; }
+  }
 
   function send(msg) {
     if (window.parent === window) return;
@@ -261,14 +271,18 @@
   }
   window.addEventListener('click', (ev) => {
     if (picking) return onPickClick(ev);
-    // Outside pick mode, links open the live site in a new tab rather than
-    // navigating the snapshot away.
+    // Outside pick mode, a link to another page of the review switches the
+    // viewer to it; any other link opens the live site in a new tab rather
+    // than navigating the snapshot away.
     const a = ev.target.closest && ev.target.closest('a[href]');
     if (!a) return;
     const href = a.getAttribute('href') || '';
     if (href.startsWith('#') || href.startsWith('javascript:')) return;
     ev.preventDefault();
-    window.open(a.href, '_blank', 'noopener');
+    const key = normUrl(a.href);
+    const page = key && pages.find((p) => normUrl(p.url) === key);
+    if (page) send({ type: 'goto', id: page.id });
+    else window.open(a.href, '_blank', 'noopener');
   }, true);
   window.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && picking) { setPicking(false); send({ type: 'pick-cancel' }); }
@@ -284,7 +298,11 @@
     const m = ev.data || {};
     if (!m.lf) return;
     if (m.cmd === 'hello') send({ type: 'ready' });
-    if (m.cmd === 'notes') { notes = Array.isArray(m.notes) ? m.notes : []; renderPins(); }
+    if (m.cmd === 'notes') {
+      notes = Array.isArray(m.notes) ? m.notes : [];
+      if (Array.isArray(m.pages)) pages = m.pages;
+      renderPins();
+    }
     if (m.cmd === 'pick') setPicking(!!m.on);
     if (m.cmd === 'focus') focusNote(m.id, true);
     if (m.cmd === 'clear-preview') { preview = null; renderPins(); }

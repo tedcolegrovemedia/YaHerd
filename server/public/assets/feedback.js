@@ -1,6 +1,7 @@
-// Feedback review UI: the editor (/feedback/page, data-mode="edit") and the
-// public student view (/f/<token>, data-mode="view"). Both embed the page
-// replay in a sandboxed iframe and talk to lf-frame.js through postMessage.
+// Feedback review UI: the editor (/feedback/review, data-mode="edit") and the
+// public student view (/f/<token>, data-mode="view"). A review has several
+// pages; both views show one at a time in a sandboxed iframe and talk to
+// lf-frame.js through postMessage.
 (function () {
   'use strict';
   const app = document.querySelector('.fb-app');
@@ -8,11 +9,18 @@
 
   const MODE = app.dataset.mode;
   const TOKEN = app.dataset.token;
-  const PAGE_ID = app.dataset.page;
+  const REVIEW_ID = app.dataset.review;
   const frame = app.querySelector('.fb-frame');
+  const empty = app.querySelector('.fb-stage-empty');
   const list = document.getElementById('fb-notes');
-  let notes = JSON.parse(document.getElementById('fb-initial').textContent || '[]');
+  const pageSelect = document.getElementById('fb-page-select');
+  const initial = JSON.parse(document.getElementById('fb-initial').textContent || '{}');
+  let pages = initial.pages || [];
+  let pageId = initial.current || null;
   let activeId = null;
+
+  const currentPage = () => pages.find((p) => p.id === pageId) || null;
+  const notesOf = (p) => (p ? p.notes || [] : []);
 
   async function call(method, path, body) {
     const res = await fetch(path, {
@@ -42,8 +50,13 @@
     if (frame.contentWindow) frame.contentWindow.postMessage(Object.assign({ lf: 1 }, msg), '*');
   }
   // Sent on every change; the frame also asks for a copy whenever it
-  // (re)loads, so messages sent before it was listening don't matter.
-  const syncFrame = () => tell({ cmd: 'notes', notes });
+  // (re)loads, so messages sent before it was listening don't matter. The
+  // page list lets links inside the replay switch to other reviewed pages.
+  const syncFrame = () => tell({
+    cmd: 'notes',
+    notes: notesOf(currentPage()),
+    pages: pages.map((p) => ({ id: p.id, url: p.url })),
+  });
 
   window.addEventListener('message', (ev) => {
     if (ev.source !== frame.contentWindow) return;
@@ -51,11 +64,10 @@
     if (!m.lf) return;
     if (m.type === 'ready') syncFrame();
     if (m.type === 'pin') setActive(m.id, true);
+    if (m.type === 'goto' && pages.some((p) => p.id === m.id)) showPage(m.id);
     if (m.type === 'picked' && MODE === 'edit') onPicked(m);
     if (m.type === 'pick-cancel' && MODE === 'edit') endPick();
   });
-  // In case the frame announced itself before this script was running.
-  tell({ cmd: 'hello' });
 
   // ---------- Code rendering ----------
   const escHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -164,18 +176,41 @@
     return card;
   }
 
+  function pageOptionLabel(p) {
+    const ns = notesOf(p);
+    if (!ns.length) return p.label;
+    const pending = ns.filter((n) => !n.closed).length;
+    if (MODE === 'edit') return `${p.label} · ${ns.length} comment${ns.length === 1 ? '' : 's'}`;
+    return pending ? `${p.label} · ${pending} to read` : `${p.label} · ✓`;
+  }
+
+  function renderPageSelect() {
+    if (!pageSelect) return;
+    pageSelect.textContent = '';
+    for (const p of pages) {
+      const o = new Option(pageOptionLabel(p), String(p.id), false, p.id === pageId);
+      pageSelect.append(o);
+    }
+    pageSelect.disabled = pages.length < 2 && MODE !== 'edit';
+  }
+
   function render() {
+    const page = currentPage();
+    const notes = notesOf(page);
     list.textContent = '';
-    if (!notes.length) {
+    if (page && !notes.length) {
       const p = document.createElement('p');
       p.className = 'empty';
-      p.textContent = MODE === 'edit' ? 'No comments yet. Click “+ Add comment”, then click part of the page.' : 'No feedback on this page yet.';
+      p.textContent = MODE === 'edit' ? 'No comments on this page yet. Click “+ Add comment”, then click part of the page.' : 'No feedback on this page.';
       list.append(p);
     }
     notes.forEach((n) => list.append(noteCard(n)));
-    const acked = notes.filter((n) => n.closed).length;
+
+    const all = pages.flatMap(notesOf);
+    const acked = all.filter((n) => n.closed).length;
     const progress = document.getElementById('fb-progress');
-    if (progress) progress.textContent = notes.length ? `${acked} of ${notes.length} acknowledged` : '';
+    if (progress) progress.textContent = all.length ? `${acked} of ${all.length} acknowledged` : '';
+    renderPageSelect();
     syncFrame();
   }
 
@@ -187,215 +222,289 @@
     if (!fromFrame) tell({ cmd: 'focus', id });
   }
 
+  function showPage(id) {
+    pageId = id;
+    activeId = null;
+    const page = currentPage();
+    frame.hidden = !page;
+    if (empty) empty.hidden = !!page;
+    if (page) frame.src = `/f/${TOKEN}/frame/${page.id}`;
+    const url = new URL(location.href);
+    if (page) url.searchParams.set('page', page.id); else url.searchParams.delete('page');
+    url.searchParams.delete('warning');
+    history.replaceState(null, '', url);
+    if (MODE === 'edit') onPageChange(page);
+    render();
+  }
+
+  if (pageSelect) pageSelect.addEventListener('change', () => showPage(+pageSelect.value));
+
   async function studentToggle(n, action) {
     try {
       const res = await call('POST', `/api/share/${TOKEN}/notes/${n.id}/${action}`);
-      notes = res.notes;
+      currentPage().notes = res.notes;
       render();
     } catch (e) { flash(e.message, true); }
   }
-
-  render();
-  if (MODE !== 'edit') return;
 
   // ======================= Editor only =======================
-  const addBtn = document.getElementById('fb-add');
-  const hint = document.getElementById('fb-pick-hint');
-  const form = document.getElementById('fb-compose');
-  const target = document.getElementById('fb-target');
-  const attach = form.elements.attach_code;
-  const codePick = form.querySelector('.fb-code-pick');
-  const sourceBox = form.querySelector('.fb-source');
-  const MAX_LINES = 80;
-  let draft = null; // { anchor, src, editId }
-  let sourceLines = null;
+  let onPageChange = () => {};
+  let onPicked = () => {};
+  let endPick = () => {};
+  let startEdit = () => {};
+  let editNote = async () => {};
+  let deleteNote = async () => {};
 
-  function startPick() {
-    cancelCompose();
-    addBtn.hidden = true;
-    hint.hidden = false;
-    tell({ cmd: 'pick', on: true });
-  }
-  function endPick() {
-    hint.hidden = true;
-    addBtn.hidden = false;
-    tell({ cmd: 'pick', on: false });
-  }
-  addBtn.addEventListener('click', startPick);
-  document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && !hint.hidden) endPick();
-  });
+  if (MODE === 'edit') {
+    const addBtn = document.getElementById('fb-add');
+    const hint = document.getElementById('fb-pick-hint');
+    const form = document.getElementById('fb-compose');
+    const target = document.getElementById('fb-target');
+    const attach = form.elements.attach_code;
+    const codePick = form.querySelector('.fb-code-pick');
+    const sourceBox = form.querySelector('.fb-source');
+    const pageUrl = document.getElementById('fb-page-url');
+    const MAX_LINES = 80;
+    let draft = null; // { anchor, src, editId }
+    let sourceLines = null;
 
-  async function loadSource() {
-    if (sourceLines) return sourceLines;
-    const res = await call('GET', `/api/feedback/pages/${PAGE_ID}/source`);
-    sourceLines = res.lines;
-    const html = highlight(sourceLines);
-    sourceBox.innerHTML = html.map((h, i) =>
-      `<div class="sl" data-line="${i + 1}"><button type="button" class="ln" tabindex="-1">${i + 1}</button><span class="lc">${h || ' '}</span></div>`).join('');
-    return sourceLines;
-  }
+    const setNotes = (ns) => { currentPage().notes = ns; };
 
-  function setRange(start, end, scroll) {
-    const max = sourceLines ? sourceLines.length : 1;
-    start = Math.min(Math.max(1, start | 0), max);
-    end = Math.min(Math.max(start, end | 0), max, start + MAX_LINES - 1);
-    form.elements.code_start.value = start;
-    form.elements.code_end.value = end;
-    sourceBox.querySelectorAll('.sl.sel').forEach((el) => el.classList.remove('sel'));
-    for (let i = start; i <= end; i++) {
-      const row = sourceBox.children[i - 1];
-      if (row) row.classList.add('sel');
-    }
-    if (scroll) {
-      const row = sourceBox.children[start - 1];
-      if (row) sourceBox.scrollTop = row.offsetTop - sourceBox.clientHeight / 3;
-    }
-  }
-
-  sourceBox.addEventListener('click', (ev) => {
-    const row = ev.target.closest('.sl');
-    if (!row) return;
-    const line = +row.dataset.line;
-    const start = +form.elements.code_start.value || line;
-    if (ev.shiftKey) setRange(Math.min(start, line), Math.max(start, line));
-    else setRange(line, line);
-  });
-  for (const name of ['code_start', 'code_end']) {
-    form.elements[name].addEventListener('change', () =>
-      setRange(+form.elements.code_start.value, +form.elements.code_end.value, true));
-  }
-
-  async function showCodePicker(start, end) {
-    codePick.hidden = false;
-    try {
-      await loadSource();
-      setRange(start, end, true);
-    } catch (e) { flash(e.message, true); }
-  }
-  attach.addEventListener('change', () => {
-    if (!attach.checked) { codePick.hidden = true; return; }
-    const [s, e] = draft && draft.src ? draft.src : [1, 1];
-    showCodePicker(s, Math.min(e, s + 14));
-  });
-
-  function openCompose(label) {
-    target.textContent = label;
-    form.hidden = false;
-    form.elements.body.focus();
-  }
-
-  function onPicked(m) {
-    endPick();
-    draft = { anchor: m.anchor, src: m.src, editId: null };
-    form.reset();
-    codePick.hidden = true;
-    openCompose(m.label + (m.src ? `  ·  line ${m.src[0]}` : ''));
-    // Default to the element's code when it's short enough to be useful.
-    if (m.src && m.src[1] - m.src[0] < 40) {
-      attach.checked = true;
-      showCodePicker(m.src[0], m.src[1]);
-    }
-  }
-
-  function startEdit(n) {
-    endPick();
-    draft = { anchor: null, src: n.code_start ? [n.code_start, n.code_end] : null, editId: n.id };
-    form.reset();
-    form.elements.body.value = n.body;
-    attach.checked = !!n.code;
-    codePick.hidden = true;
-    if (n.code) showCodePicker(n.code_start, n.code_end);
-    openCompose(`Editing comment ${n.number}`);
-    setActive(n.id, false);
-  }
-
-  function cancelCompose() {
-    draft = null;
-    form.hidden = true;
-    form.reset();
-    tell({ cmd: 'clear-preview' });
-  }
-  document.getElementById('fb-cancel').addEventListener('click', cancelCompose);
-
-  form.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    if (!draft) return;
-    const payload = { body: form.elements.body.value };
-    if (attach.checked) {
-      payload.code_start = +form.elements.code_start.value;
-      payload.code_end = +form.elements.code_end.value;
-    } else {
-      payload.code_start = null;
-    }
-    const submit = form.querySelector('button[type=submit]');
-    submit.disabled = true;
-    try {
-      let res;
-      if (draft.editId) {
-        res = await call('PATCH', `/api/feedback/notes/${draft.editId}`, payload);
-      } else {
-        res = await call('POST', `/api/feedback/pages/${PAGE_ID}/notes`, Object.assign(payload, { anchor: draft.anchor }));
-        activeId = res.id;
-      }
-      notes = res.notes;
+    onPageChange = (page) => {
       cancelCompose();
-      render();
-      flash('Comment saved');
-    } catch (e) { flash(e.message, true); }
-    submit.disabled = false;
-  });
-
-  async function editNote(id, changes) {
-    try {
-      notes = (await call('PATCH', `/api/feedback/notes/${id}`, changes)).notes;
-      render();
-    } catch (e) { flash(e.message, true); }
-  }
-
-  async function deleteNote(n) {
-    if (!confirm(`Delete comment ${n.number}? This can't be undone.`)) return;
-    try {
-      notes = (await call('DELETE', `/api/feedback/notes/${n.id}`)).notes;
-      render();
-    } catch (e) { flash(e.message, true); }
-  }
-
-  // ---------- Toolbar ----------
-  app.querySelectorAll('.fb-viewports button').forEach((b) => b.addEventListener('click', () => {
-    app.querySelectorAll('.fb-viewports button').forEach((x) => x.classList.toggle('active', x === b));
-    frame.style.width = b.dataset.width ? b.dataset.width + 'px' : '';
-  }));
-
-  document.getElementById('fb-copy').addEventListener('click', async (ev) => {
-    try {
-      await navigator.clipboard.writeText(ev.currentTarget.dataset.url);
-      flash('Share link copied');
-    } catch (_) {
-      prompt('Copy this link:', ev.currentTarget.dataset.url);
-    }
-  });
-
-  document.getElementById('fb-relink').addEventListener('click', async () => {
-    if (!confirm('Create a new share link? Anyone using the current link (including the student) will lose access until you send them the new one.')) return;
-    try {
-      const res = await call('PATCH', `/api/feedback/pages/${PAGE_ID}`, { new_link: true });
-      // The frame is served under the token, so reload onto the new link.
-      location.reload();
-      flash('New link created: ' + res.share_url);
-    } catch (e) { flash(e.message, true); }
-  });
-
-  document.getElementById('fb-resnap').addEventListener('click', async (ev) => {
-    if (!confirm('Re-download the live page? Pins re-attach to their elements; code already quoted in comments stays as it was.')) return;
-    const b = ev.currentTarget;
-    b.disabled = true;
-    try {
-      await call('POST', `/api/feedback/pages/${PAGE_ID}/snapshot`);
+      endPick();
       sourceLines = null;
-      frame.src = frame.src;
-      flash('Snapshot refreshed');
-    } catch (e) { flash(e.message, true); }
-    b.disabled = false;
-  });
+      addBtn.disabled = !page;
+      document.getElementById('fb-resnap').disabled = !page;
+      document.getElementById('fb-del-page').disabled = !page;
+      if (page) { pageUrl.href = page.url; pageUrl.textContent = page.url; }
+    };
+
+    function startPick() {
+      cancelCompose();
+      addBtn.hidden = true;
+      hint.hidden = false;
+      tell({ cmd: 'pick', on: true });
+    }
+    endPick = () => {
+      hint.hidden = true;
+      addBtn.hidden = false;
+      tell({ cmd: 'pick', on: false });
+    };
+    addBtn.addEventListener('click', startPick);
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && !hint.hidden) endPick();
+    });
+
+    async function loadSource() {
+      if (sourceLines) return sourceLines;
+      const res = await call('GET', `/api/feedback/pages/${pageId}/source`);
+      sourceLines = res.lines;
+      const html = highlight(sourceLines);
+      sourceBox.innerHTML = html.map((h, i) =>
+        `<div class="sl" data-line="${i + 1}"><button type="button" class="ln" tabindex="-1">${i + 1}</button><span class="lc">${h || ' '}</span></div>`).join('');
+      return sourceLines;
+    }
+
+    function setRange(start, end, scroll) {
+      const max = sourceLines ? sourceLines.length : 1;
+      start = Math.min(Math.max(1, start | 0), max);
+      end = Math.min(Math.max(start, end | 0), max, start + MAX_LINES - 1);
+      form.elements.code_start.value = start;
+      form.elements.code_end.value = end;
+      sourceBox.querySelectorAll('.sl.sel').forEach((el) => el.classList.remove('sel'));
+      for (let i = start; i <= end; i++) {
+        const row = sourceBox.children[i - 1];
+        if (row) row.classList.add('sel');
+      }
+      if (scroll) {
+        const row = sourceBox.children[start - 1];
+        if (row) sourceBox.scrollTop = row.offsetTop - sourceBox.clientHeight / 3;
+      }
+    }
+
+    sourceBox.addEventListener('click', (ev) => {
+      const row = ev.target.closest('.sl');
+      if (!row) return;
+      const line = +row.dataset.line;
+      const start = +form.elements.code_start.value || line;
+      if (ev.shiftKey) setRange(Math.min(start, line), Math.max(start, line));
+      else setRange(line, line);
+    });
+    for (const name of ['code_start', 'code_end']) {
+      form.elements[name].addEventListener('change', () =>
+        setRange(+form.elements.code_start.value, +form.elements.code_end.value, true));
+    }
+
+    async function showCodePicker(start, end) {
+      codePick.hidden = false;
+      try {
+        await loadSource();
+        setRange(start, end, true);
+      } catch (e) { flash(e.message, true); }
+    }
+    attach.addEventListener('change', () => {
+      if (!attach.checked) { codePick.hidden = true; return; }
+      const [s, e] = draft && draft.src ? draft.src : [1, 1];
+      showCodePicker(s, Math.min(e, s + 14));
+    });
+
+    function openCompose(label) {
+      target.textContent = label;
+      form.hidden = false;
+      form.elements.body.focus();
+    }
+
+    onPicked = (m) => {
+      endPick();
+      draft = { anchor: m.anchor, src: m.src, editId: null };
+      form.reset();
+      codePick.hidden = true;
+      openCompose(m.label + (m.src ? `  ·  line ${m.src[0]}` : ''));
+      // Default to the element's code when it's short enough to be useful.
+      if (m.src && m.src[1] - m.src[0] < 40) {
+        attach.checked = true;
+        showCodePicker(m.src[0], m.src[1]);
+      }
+    };
+
+    startEdit = (n) => {
+      endPick();
+      draft = { anchor: null, src: n.code_start ? [n.code_start, n.code_end] : null, editId: n.id };
+      form.reset();
+      form.elements.body.value = n.body;
+      attach.checked = !!n.code;
+      codePick.hidden = true;
+      if (n.code) showCodePicker(n.code_start, n.code_end);
+      openCompose(`Editing comment ${n.number}`);
+      setActive(n.id, false);
+    };
+
+    function cancelCompose() {
+      draft = null;
+      form.hidden = true;
+      form.reset();
+      tell({ cmd: 'clear-preview' });
+    }
+    document.getElementById('fb-cancel').addEventListener('click', cancelCompose);
+
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      if (!draft) return;
+      const payload = { body: form.elements.body.value };
+      if (attach.checked) {
+        payload.code_start = +form.elements.code_start.value;
+        payload.code_end = +form.elements.code_end.value;
+      } else {
+        payload.code_start = null;
+      }
+      const submit = form.querySelector('button[type=submit]');
+      submit.disabled = true;
+      try {
+        let res;
+        if (draft.editId) {
+          res = await call('PATCH', `/api/feedback/notes/${draft.editId}`, payload);
+        } else {
+          res = await call('POST', `/api/feedback/pages/${pageId}/notes`, Object.assign(payload, { anchor: draft.anchor }));
+          activeId = res.id;
+        }
+        setNotes(res.notes);
+        cancelCompose();
+        render();
+        flash('Comment saved');
+      } catch (e) { flash(e.message, true); }
+      submit.disabled = false;
+    });
+
+    editNote = async (id, changes) => {
+      try {
+        setNotes((await call('PATCH', `/api/feedback/notes/${id}`, changes)).notes);
+        render();
+      } catch (e) { flash(e.message, true); }
+    };
+
+    deleteNote = async (n) => {
+      if (!confirm(`Delete comment ${n.number}? This can't be undone.`)) return;
+      try {
+        setNotes((await call('DELETE', `/api/feedback/notes/${n.id}`)).notes);
+        render();
+      } catch (e) { flash(e.message, true); }
+    };
+
+    // Merge a fresh page list from the server, keeping notes we already have.
+    function mergePages(fresh) {
+      const known = new Map(pages.map((p) => [p.id, p]));
+      pages = fresh.map((p) => ({ ...p, notes: known.has(p.id) ? known.get(p.id).notes : [] }));
+    }
+
+    // ---------- Toolbar ----------
+    app.querySelectorAll('.fb-viewports button').forEach((b) => b.addEventListener('click', () => {
+      app.querySelectorAll('.fb-viewports button').forEach((x) => x.classList.toggle('active', x === b));
+      frame.style.width = b.dataset.width ? b.dataset.width + 'px' : '';
+    }));
+
+    document.getElementById('fb-add-page').addEventListener('click', async (ev) => {
+      const url = prompt('URL of another page on this site:', currentPage() ? currentPage().url : '');
+      if (!url) return;
+      const b = ev.currentTarget;
+      b.disabled = true;
+      b.textContent = 'Saving…';
+      try {
+        const res = await call('POST', `/api/feedback/reviews/${REVIEW_ID}/pages`, { url });
+        mergePages(res.review.pages);
+        showPage(res.page_id);
+        flash(res.created ? 'Page added' : 'That page is already in this review');
+      } catch (e) { flash(e.message, true); }
+      b.disabled = false;
+      b.textContent = '+ Page';
+    });
+
+    document.getElementById('fb-del-page').addEventListener('click', async () => {
+      const page = currentPage();
+      if (!page) return;
+      const n = notesOf(page).length;
+      if (!confirm(`Remove “${page.label}” from this review${n ? ` and delete its ${n} comment${n === 1 ? '' : 's'}` : ''}? This can't be undone.`)) return;
+      try {
+        await call('DELETE', `/api/feedback/pages/${page.id}`);
+        pages = pages.filter((p) => p.id !== page.id);
+        showPage(pages.length ? pages[0].id : null);
+        flash('Page removed');
+      } catch (e) { flash(e.message, true); }
+    });
+
+    document.getElementById('fb-copy').addEventListener('click', async (ev) => {
+      try {
+        await navigator.clipboard.writeText(ev.currentTarget.dataset.url);
+        flash('Share link copied');
+      } catch (_) {
+        prompt('Copy this link:', ev.currentTarget.dataset.url);
+      }
+    });
+
+    document.getElementById('fb-relink').addEventListener('click', async () => {
+      if (!confirm('Create a new share link? Anyone using the current link (including the student) will lose access until you send them the new one.')) return;
+      try {
+        await call('PATCH', `/api/feedback/reviews/${REVIEW_ID}`, { new_link: true });
+        // The frames are served under the token, so reload onto the new link.
+        location.reload();
+      } catch (e) { flash(e.message, true); }
+    });
+
+    document.getElementById('fb-resnap').addEventListener('click', async (ev) => {
+      if (!confirm('Re-download this page from the live site? Pins re-attach to their elements; code already quoted in comments stays as it was.')) return;
+      const b = ev.currentTarget;
+      b.disabled = true;
+      try {
+        await call('POST', `/api/feedback/pages/${pageId}/snapshot`);
+        sourceLines = null;
+        frame.src = frame.src;
+        flash('Snapshot refreshed');
+      } catch (e) { flash(e.message, true); }
+      b.disabled = false;
+    });
+  }
+
+  showPage(pageId);
+  // In case the frame announced itself before this script was running.
+  tell({ cmd: 'hello' });
 })();

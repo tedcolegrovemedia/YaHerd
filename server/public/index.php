@@ -90,12 +90,19 @@ if (str_starts_with($path, '/api/')) {
 // ---------- Dashboard ----------
 $views = dirname(__DIR__) . '/views';
 
-// Public feedback links: no login. /f/<token> is the student view; /frame is
-// the sandboxed page replay it (and the editor) embeds.
-if (preg_match('#^/f/([\w-]{32})(/frame)?$#', $path, $m)) {
-    $sharePage = feedback_page_by_token($m[1]);
-    if (!$sharePage) { http_response_code(404); require $views . '/share_missing.php'; exit; }
-    if (!empty($m[2])) feedback_send_frame($sharePage);
+// Public feedback links: no login. /f/<token> is the student view of a review;
+// /f/<token>/frame/<page id> is the sandboxed page replay it (and the editor)
+// embeds.
+if (preg_match('#^/f/([\w-]{32})(?:/frame/(\d+))?$#', $path, $m)) {
+    $shareReview = feedback_review_by_token($m[1]);
+    if (!$shareReview) { http_response_code(404); require $views . '/share_missing.php'; exit; }
+    if (!empty($m[2])) {
+        $stmt = db()->prepare('SELECT * FROM feedback_pages WHERE id = ? AND review_id = ?');
+        $stmt->execute([(int)$m[2], (int)$shareReview['id']]);
+        $framePage = $stmt->fetch();
+        if (!$framePage) { http_response_code(404); exit('Not found'); }
+        feedback_send_frame($framePage);
+    }
     require $views . '/share.php';
     exit;
 }
@@ -164,9 +171,15 @@ switch ($path) {
         if (empty($_GET['project'])) { header('Location: /'); exit; }
         require $views . '/feedback.php';
         break;
-    case '/feedback/page':
+    case '/feedback/review':
         require $views . '/feedback_editor.php';
         break;
+    case '/feedback/page': // links from before reviews grouped pages
+        $stmt = db()->prepare('SELECT review_id FROM feedback_pages WHERE id = ?');
+        $stmt->execute([(int)($_GET['id'] ?? 0)]);
+        $rid = $stmt->fetchColumn();
+        header('Location: ' . ($rid ? '/feedback/review?id=' . (int)$rid . '&page=' . (int)$_GET['id'] : '/'));
+        exit;
     case '/task':
         require $views . '/task_detail.php';
         break;

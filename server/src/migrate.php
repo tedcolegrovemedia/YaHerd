@@ -97,14 +97,12 @@ if (!db()->query("SHOW COLUMNS FROM projects LIKE 'type'")->fetch()) {
     echo "added projects.type\n";
 }
 db()->exec(
-    'CREATE TABLE IF NOT EXISTS feedback_pages (
+    'CREATE TABLE IF NOT EXISTS feedback_reviews (
        id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
        project_id    INT UNSIGNED NOT NULL,
        title         VARCHAR(150) NOT NULL,
-       url           VARCHAR(1000) NOT NULL,
-       final_url     VARCHAR(1000) NOT NULL,
+       site_url      VARCHAR(1000) NOT NULL,
        share_token   CHAR(32) NOT NULL UNIQUE,
-       snapshot_at   DATETIME NULL,
        created_by    INT UNSIGNED NULL,
        created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
        KEY idx_project (project_id),
@@ -112,6 +110,72 @@ db()->exec(
        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
      ) ENGINE=InnoDB'
 );
+db()->exec(
+    'CREATE TABLE IF NOT EXISTS feedback_pages (
+       id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+       review_id     INT UNSIGNED NOT NULL,
+       title         VARCHAR(150) NULL,
+       url           VARCHAR(1000) NOT NULL,
+       url_key       CHAR(40) NOT NULL,
+       final_url     VARCHAR(1000) NOT NULL,
+       snapshot_at   DATETIME NULL,
+       created_by    INT UNSIGNED NULL,
+       created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+       UNIQUE KEY uq_review_url (review_id, url_key),
+       FOREIGN KEY (review_id)  REFERENCES feedback_reviews(id) ON DELETE CASCADE,
+       FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+     ) ENGINE=InnoDB'
+);
+
+// Upgrade the first feedback layout (one page = one share link, pages owned
+// by the project) to reviews: every existing page becomes a one-page review
+// that keeps its share token, so links already handed out keep working.
+if (db()->query("SHOW COLUMNS FROM feedback_pages LIKE 'share_token'")->fetch()) {
+    require_once __DIR__ . '/helpers.php';
+    require_once __DIR__ . '/feedback.php';
+    $pdo = db();
+    $pdo->exec('ALTER TABLE feedback_pages
+                  ADD COLUMN review_id INT UNSIGNED NULL AFTER id,
+                  ADD COLUMN url_key CHAR(40) NULL AFTER url,
+                  MODIFY title VARCHAR(150) NULL');
+    $insReview = $pdo->prepare(
+        'INSERT INTO feedback_reviews (project_id, title, site_url, share_token, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)'
+    );
+    $setPage = $pdo->prepare('UPDATE feedback_pages SET review_id = ?, url_key = ? WHERE id = ?');
+    foreach ($pdo->query('SELECT * FROM feedback_pages WHERE review_id IS NULL')->fetchAll() as $pg) {
+        $insReview->execute([$pg['project_id'], $pg['title'], feedback_site_prefix($pg['url']),
+                             $pg['share_token'], $pg['created_by'], $pg['created_at']]);
+        $setPage->execute([(int)$pdo->lastInsertId(), feedback_url_key($pg['url']), $pg['id']]);
+    }
+    if ((int)$pdo->query('SELECT COUNT(*) FROM feedback_pages WHERE review_id IS NULL')->fetchColumn() > 0) {
+        exit("feedback_pages upgrade incomplete; nothing dropped. Re-run migrate.php.\n");
+    }
+    // The old title (the reviewer's label) moved to the review; a page is now
+    // titled by its own <title>, shown with its path as fallback.
+    $setTitle = $pdo->prepare('UPDATE feedback_pages SET title = ? WHERE id = ?');
+    foreach ($pdo->query('SELECT id FROM feedback_pages')->fetchAll(PDO::FETCH_COLUMN) as $pageId) {
+        $src = feedback_snapshot_source((int)$pageId);
+        $setTitle->execute([$src !== null ? feedback_html_title($src) : null, $pageId]);
+    }
+    $fk = $pdo->query(
+        "SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'feedback_pages'
+           AND COLUMN_NAME = 'project_id' AND REFERENCED_TABLE_NAME = 'projects'"
+    )->fetchColumn();
+    if ($fk) $pdo->exec("ALTER TABLE feedback_pages DROP FOREIGN KEY `$fk`");
+    $pdo->exec('ALTER TABLE feedback_pages
+                  DROP INDEX idx_project,
+                  DROP COLUMN project_id,
+                  DROP INDEX share_token,
+                  DROP COLUMN share_token,
+                  MODIFY review_id INT UNSIGNED NOT NULL,
+                  MODIFY url_key CHAR(40) NOT NULL,
+                  ADD UNIQUE KEY uq_review_url (review_id, url_key),
+                  ADD CONSTRAINT fk_feedback_pages_review
+                    FOREIGN KEY (review_id) REFERENCES feedback_reviews(id) ON DELETE CASCADE');
+    echo "upgraded feedback pages to reviews\n";
+}
 db()->exec(
     'CREATE TABLE IF NOT EXISTS feedback_notes (
        id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

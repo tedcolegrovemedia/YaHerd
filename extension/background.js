@@ -13,6 +13,7 @@ async function getState() {
     token: '',
     user: null,
     projectsCache: null, // { at: epoch-ms, projects: [] }
+    feedbackCache: null, // { at: epoch-ms, projects: [] } — feedback projects + reviews
     disabledOrigins: [],
   });
 }
@@ -33,7 +34,7 @@ async function apiFetch(state, method, path, { json, formData } = {}) {
   let data = {};
   try { data = await res.json(); } catch (_) {}
   if (res.status === 401) {
-    await chrome.storage.local.set({ token: '', user: null, projectsCache: null });
+    await chrome.storage.local.set({ token: '', user: null, projectsCache: null, feedbackCache: null });
     throw new Error('Session expired — log in again from the extension popup.');
   }
   if (!res.ok) throw new Error(data.error || `API error (${res.status})`);
@@ -46,6 +47,51 @@ async function getProjects(state, force = false) {
   const data = await apiFetch(state, 'GET', '/api/projects');
   await chrome.storage.local.set({ projectsCache: { at: Date.now(), projects: data.projects } });
   return data.projects;
+}
+
+async function getFeedbackProjects(state, force = false) {
+  const cache = state.feedbackCache;
+  if (!force && cache && Date.now() - cache.at < PROJECT_CACHE_TTL_MS) return cache.projects;
+  let projects = [];
+  try {
+    projects = (await apiFetch(state, 'GET', '/api/feedback/projects')).projects;
+  } catch (e) {
+    // Servers from before feedback projects don't have this endpoint.
+    if (!/404|not found/i.test(e.message)) throw e;
+  }
+  await chrome.storage.local.set({ feedbackCache: { at: Date.now(), projects } });
+  return projects;
+}
+
+// Same canonical form as feedback_normalize_url() on the server.
+function normUrl(u) {
+  try {
+    const x = new URL(u);
+    if (!/^https?:$/.test(x.protocol)) return null;
+    return x.protocol + '//' + x.host + x.pathname.replace(/\/index\.html?$/i, '/') + x.search;
+  } catch (_) { return null; }
+}
+
+// The feedback review a URL belongs to: a review that already has this exact
+// page, else the review whose site URL is the longest prefix of it.
+function matchReview(href, projects) {
+  const key = normUrl(href);
+  if (!key) return null;
+  let best = null;
+  for (const p of projects) {
+    for (const r of p.reviews) {
+      const page = r.pages.find((pg) => normUrl(pg.url) === key);
+      const project = { id: p.id, name: p.name };
+      const review = { id: r.id, title: r.title, site_url: r.site_url, share_url: r.share_url };
+      if (page) return { project, review, page: { id: page.id } };
+      const site = normUrl(r.site_url);
+      if (site && key.startsWith(site) && (!best || site.length > best.len)) {
+        best = { project, review, page: null, len: site.length };
+      }
+    }
+  }
+  if (best) delete best.len;
+  return best;
 }
 
 function matchProject(origin, projects) {
@@ -113,6 +159,7 @@ const handlers = {
       token: data.token,
       user: data.user,
       projectsCache: null,
+      feedbackCache: null,
     });
     return { user: data.user };
   },
@@ -122,7 +169,7 @@ const handlers = {
     if (state.token) {
       try { await apiFetch(state, 'POST', '/api/logout'); } catch (_) {}
     }
-    await chrome.storage.local.set({ token: '', user: null, projectsCache: null });
+    await chrome.storage.local.set({ token: '', user: null, projectsCache: null, feedbackCache: null });
     return { ok: true };
   },
 
@@ -131,17 +178,24 @@ const handlers = {
     const state = await getState();
     if (!state.token || !state.serverUrl) return { loggedIn: false };
     let projects;
+    let feedbackProjects;
     try {
       projects = await getProjects(state, msg.force === true);
+      feedbackProjects = await getFeedbackProjects(state, msg.force === true);
     } catch (e) {
       return { loggedIn: false, error: e.message };
     }
-    const project = msg.origin ? matchProject(msg.origin, projects) : null;
+    // A feedback review is the more specific match (it's a URL prefix, a
+    // collaborative project is a whole origin), so it wins.
+    const feedback = msg.href ? matchReview(msg.href, feedbackProjects) : null;
+    const project = !feedback && msg.origin ? matchProject(msg.origin, projects) : null;
     return {
       loggedIn: true,
       user: state.user,
       serverUrl: state.serverUrl,
       project,
+      feedback,
+      feedbackProjects: msg.withFeedbackProjects ? feedbackProjects : undefined,
       disabled: msg.origin ? state.disabledOrigins.includes(msg.origin) : false,
     };
   },
@@ -151,6 +205,12 @@ const handlers = {
     const set = new Set(state.disabledOrigins);
     msg.enabled ? set.delete(msg.origin) : set.add(msg.origin);
     await chrome.storage.local.set({ disabledOrigins: [...set] });
+    return { ok: true };
+  },
+
+  // Forget cached feedback reviews after creating a review or page.
+  async invalidateFeedback() {
+    await chrome.storage.local.set({ feedbackCache: null });
     return { ok: true };
   },
 

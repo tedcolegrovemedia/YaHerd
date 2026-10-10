@@ -16,6 +16,11 @@
   .row { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; }
   a { color: #4f46e5; font-size: 12px; }
   .hidden { display: none; }
+  select { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px; background: #fff; }
+  details { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 13px; }
+  details summary { cursor: pointer; font-weight: 600; }
+  .fb-tag { color: #db2777; font-weight: 600; }
+  .hint { font-size: 11px; color: #6b7280; margin-top: 6px; line-height: 1.4; }
 </style>
 </head>
 <body>
@@ -38,6 +43,22 @@
       <input type="checkbox" id="site-toggle" style="width:auto">
       <label for="site-toggle" style="margin:0;color:#1f2430">Show overlay on this site</label>
     </div>
+    <details id="fb-start" class="hidden">
+      <summary>Give feedback on this site</summary>
+      <label>Feedback project</label>
+      <select id="fb-project"></select>
+      <label>Review</label>
+      <select id="fb-review"></select>
+      <div id="fb-new-fields">
+        <label>Student or site name</label>
+        <input id="fb-title" placeholder="e.g. Jordan — Portfolio">
+        <label>Site URL (pages under it join this review)</label>
+        <input id="fb-site">
+      </div>
+      <button id="fb-start-btn">Start reviewing</button>
+      <div class="hint">Saves this page from your browser, then you can pin comments right on it. Every page you comment on under the site URL is added to the same review and student link.</div>
+      <div id="fb-error" class="error"></div>
+    </details>
     <div class="row"><a id="dashboard-link" target="_blank">Open dashboard ↗</a></div>
     <div class="row" style="justify-content:space-between">
       <span id="who" style="font-size:12px;color:#6b7280"></span>

@@ -30,11 +30,13 @@ if ($projects) {
          GROUP BY c.project_id"
     ) as $r) $stats[(int)$r['project_id']]['latest_shot'] = (int)$r['latest_shot'];
     foreach (db()->query(
-        "SELECT fp.project_id, COUNT(DISTINCT fp.id) AS pages,
+        "SELECT r.project_id, COUNT(DISTINCT r.id) AS reviews,
                 SUM(n.id IS NOT NULL AND n.closed_at IS NULL) AS fb_open,
                 SUM(n.closed_at IS NOT NULL) AS fb_closed
-         FROM feedback_pages fp LEFT JOIN feedback_notes n ON n.page_id = fp.id
-         WHERE fp.project_id IN ($ids) GROUP BY fp.project_id"
+         FROM feedback_reviews r
+         LEFT JOIN feedback_pages fp ON fp.review_id = r.id
+         LEFT JOIN feedback_notes n ON n.page_id = fp.id
+         WHERE r.project_id IN ($ids) GROUP BY r.project_id"
     ) as $r) $stats[(int)$r['project_id']] = ($stats[(int)$r['project_id']] ?? []) + $r;
 }
 
@@ -56,7 +58,7 @@ layout_top('Projects', $me);
     </div>
     <div class="tile-body">
       <strong><?= e($p['name']) ?></strong>
-      <span class="tile-origin">Feedback · <?= (int)($s['pages'] ?? 0) ?> page<?= (int)($s['pages'] ?? 0) === 1 ? '' : 's' ?></span>
+      <span class="tile-origin">Feedback · <?= (int)($s['reviews'] ?? 0) ?> review<?= (int)($s['reviews'] ?? 0) === 1 ? '' : 's' ?></span>
       <span class="tile-counts">
         <span class="pill pill-queued"><?= (int)($s['fb_open'] ?? 0) ?> pending</span>
         <span class="pill pill-complete"><?= (int)($s['fb_closed'] ?? 0) ?> acknowledged</span>

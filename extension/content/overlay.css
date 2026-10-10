@@ -198,3 +198,29 @@ select.wc-status {
 .wc-item .wc-excerpt { font-size: 13px; }
 .wc-empty { color: #6b7280; font-size: 13px; padding: 8px 0; }
 .wc-error { color: #dc2626; font-size: 12px; margin-top: 6px; }
+
+/* ---------- Feedback mode ---------- */
+.wc-fab.wc-fab-fb { background: #db2777; }
+.wc-fab.wc-fab-fb:hover { background: #be185d; }
+.wc-pin.wc-fb-pin { border-radius: 50%; background: #4f46e5; }
+.wc-pin.wc-fb-pin.wc-fb-acked { background: #047857; }
+.wc-pin.wc-fb-pin.wc-provisional { background: #f59e0b; }
+.wc-sidebar header .wc-sub { font-size: 12px; font-weight: 500; color: #6b7280; }
+.wc-fb-status { margin: 12px 16px 0; font-size: 12px; color: #6b7280; line-height: 1.45; }
+.wc-fb-links { display: flex; justify-content: space-between; align-items: center; margin: 0 16px 4px; font-size: 12px; }
+.wc-fb-links a { color: #4f46e5; text-decoration: none; }
+.wc-fb-links a:hover { text-decoration: underline; }
+button.wc-linkbtn { background: none; border: none; padding: 0; color: #4f46e5; font: inherit; font-size: 12px; cursor: pointer; }
+button.wc-linkbtn:hover { text-decoration: underline; }
+button.wc-linkbtn.wc-danger { color: #dc2626; }
+.wc-bubble.wc-fb-bubble { width: 340px; max-height: calc(100vh - 20px); overflow-y: auto; }
+.wc-fb-code { margin-top: 8px; font-size: 13px; }
+.wc-check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.wc-check input { margin: 0; }
+.wc-range { display: flex; align-items: center; gap: 6px; margin: 6px 0; font-size: 12px; color: #6b7280; }
+.wc-range input { width: 64px; padding: 4px 6px; border: 1px solid #e5e7eb; border-radius: 6px; font: inherit; font-size: 12px; color: #1f2430; }
+.wc-code { margin-top: 6px; background: #0f172a; color: #e2e8f0; border-radius: 6px; padding: 6px 8px 6px 0; font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 220px; overflow-y: auto; }
+.wc-code-head { color: #94a3b8; font: 600 10.5px/1 -apple-system, sans-serif; padding: 2px 0 6px 10px; }
+.wc-cl { display: flex; }
+.wc-ln { flex: none; width: 36px; padding-right: 8px; text-align: right; color: #64748b; user-select: none; }
+.wc-lc { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }

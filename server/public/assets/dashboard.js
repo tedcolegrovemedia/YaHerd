@@ -181,22 +181,25 @@ document.addEventListener('submit', async (ev) => {
     } catch (e) { toast(e.message, true); }
   }
 
-  if (form.id === 'add-page-form') {
+  if (form.id === 'add-review-form') {
     ev.preventDefault();
     const f = new FormData(form);
     const btn = form.querySelector('button[type=submit]');
     btn.disabled = true;
     btn.textContent = 'Taking snapshot…';
     try {
-      const res = await api('POST', `/api/feedback/projects/${form.dataset.project}/pages`, {
+      const res = await api('POST', `/api/feedback/projects/${form.dataset.project}/reviews`, {
         url: f.get('url'),
         title: f.get('title'),
       });
-      location.href = `/feedback/page?id=${res.id}`;
+      // The review exists even if the first page couldn't be fetched; the
+      // review screen explains how to add it with the extension.
+      const q = res.warning ? `&warning=${encodeURIComponent(res.warning)}` : '';
+      location.href = `/feedback/review?id=${res.id}${q}`;
     } catch (e) {
       toast(e.message, true);
       btn.disabled = false;
-      btn.textContent = 'Snapshot & start reviewing';
+      btn.textContent = 'Start review';
     }
   }
 
@@ -529,7 +532,7 @@ document.addEventListener('change', (ev) => {
   });
 });
 
-// ----- Feedback project: copy share link / delete page -----
+// ----- Feedback project: copy share link / delete review -----
 document.addEventListener('click', async (ev) => {
   const copy = ev.target.closest('.copy-share');
   if (copy) {
@@ -541,12 +544,12 @@ document.addEventListener('click', async (ev) => {
     }
     return;
   }
-  const del = ev.target.closest('.delete-fb-page');
+  const del = ev.target.closest('.delete-fb-review');
   if (!del) return;
-  if (!confirm(`Delete "${del.dataset.name}"? Its comments and share link stop working. This cannot be undone.`)) return;
+  if (!confirm(`Delete "${del.dataset.name}"? All its pages and comments are removed and its share link stops working. This cannot be undone.`)) return;
   try {
-    await api('DELETE', `/api/feedback/pages/${del.dataset.page}`);
+    await api('DELETE', `/api/feedback/reviews/${del.dataset.review}`);
     del.closest('.fb-page-row').remove();
-    toast('Page deleted');
+    toast('Review deleted');
   } catch (e) { toast(e.message, true); }
 });

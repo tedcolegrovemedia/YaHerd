@@ -1,23 +1,47 @@
 {
   "manifest_version": 3,
   "name": "YaHerd",
-  "description": "Pin comments to live websites, with screenshots, statuses and replies. Self-hosted.",
-  "version": "1.0.7",
-  "permissions": ["storage", "activeTab", "tabs"],
-  "host_permissions": ["<all_urls>"],
-  "background": { "service_worker": "background.js" },
+  "description": "Pin comments to live websites — team review boards, or one-sided feedback with a shareable link. Self-hosted.",
+  "version": "1.1.0",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content/anchor.js", "content/overlay.js", "content/content.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/anchor.js",
+        "content/fb-source.js",
+        "content/overlay.js",
+        "content/feedback-overlay.js",
+        "content/content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "WebComment"
+    "default_title": "YaHerd"
   },
   "web_accessible_resources": [
-    { "resources": ["content/overlay.css"], "matches": ["<all_urls>"] }
+    {
+      "resources": [
+        "content/overlay.css"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
   ]
 }

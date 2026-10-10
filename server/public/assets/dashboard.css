@@ -466,6 +466,16 @@ main.wide ~ .site-footer { display: none; }
 .fb-title { display: flex; flex-direction: column; min-width: 0; flex: 1 1 220px; }
 .fb-title strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fb-title .hint { font-size: 12px; }
+.fb-pagebar { display: flex; align-items: center; gap: 6px; }
+.fb-page-pick { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; color: var(--ink-2); }
+.fb-page-pick select { width: auto; max-width: 260px; margin: 0; padding: 6px 9px; font-size: 13px; font-weight: 550; color: var(--ink); }
+.fb-pagebar .btn-ghost { padding: 5px 10px; font-size: 13px; }
+.fb-warning {
+  margin: 0; padding: 10px 18px; font-size: 14px;
+  background: #fff7ed; color: #9a3412; border-bottom: 1px solid #fed7aa;
+}
+.fb-stage-empty { align-self: center; max-width: 440px; margin: 40px 24px; text-align: center; color: var(--ink-2); }
+.fb-stage-empty h2 { color: var(--ink); margin: 0 0 8px; }
 .fb-viewports { display: flex; gap: 4px; }
 .fb-viewports .btn-ghost { padding: 5px 10px; font-size: 13px; }
 .fb-viewports .btn-ghost.active { background: var(--accent-weak); color: var(--accent-weak-ink); border-color: var(--accent); }

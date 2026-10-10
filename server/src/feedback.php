@@ -1,7 +1,9 @@
 <?php
-// Feedback projects: one-sided review pages. An admin snapshots a page by URL,
-// pins notes to it, and hands out a public link (/f/<token>) where the page is
-// replayed inside a sandboxed iframe with the notes overlaid.
+// Feedback projects: one-sided reviews. A review (e.g. one student's site) has
+// one public link (/f/<token>) and any number of pages. Each page is a
+// snapshot of one URL — fetched by the server, or captured from the
+// reviewer's browser by the extension — replayed inside a sandboxed iframe
+// with the notes overlaid.
 
 const FEEDBACK_MAX_BYTES     = 5 * 1024 * 1024;
 const FEEDBACK_MAX_REDIRECTS = 5;
@@ -9,6 +11,39 @@ const FEEDBACK_CODE_MAX_LINES = 80;
 
 function feedback_snapshot_path(int $pageId): string {
     return UPLOAD_DIR . '/snapshots/' . $pageId . '.html';
+}
+
+// Canonical form of a page URL for matching: lowercase scheme/host, no default
+// port, no fragment, "/index.html" treated as "/". Mirrors normUrl() in
+// lf-frame.js and the extension.
+function feedback_normalize_url(string $url): ?string {
+    $p = parse_url(trim($url));
+    if (!$p || empty($p['host'])) return null;
+    $scheme = strtolower($p['scheme'] ?? '');
+    if (!in_array($scheme, ['http', 'https'], true)) return null;
+    $port = !empty($p['port']) && (int)$p['port'] !== ($scheme === 'https' ? 443 : 80) ? ':' . (int)$p['port'] : '';
+    $path = ($p['path'] ?? '') === '' ? '/' : $p['path'];
+    $path = preg_replace('#/index\.html?$#i', '/', $path);
+    $query = isset($p['query']) && $p['query'] !== '' ? '?' . $p['query'] : '';
+    return $scheme . '://' . strtolower($p['host']) . $port . $path . $query;
+}
+
+function feedback_url_key(string $url): string {
+    return sha1(feedback_normalize_url($url) ?? $url);
+}
+
+// The "folder" a URL lives in — a review's default site prefix, so the
+// extension recognizes every page under it.
+function feedback_site_prefix(string $url): string {
+    $norm = feedback_normalize_url($url) ?? $url;
+    $norm = preg_replace('/\?.*$/', '', $norm);
+    return substr($norm, 0, strrpos($norm, '/') + 1);
+}
+
+function feedback_html_title(string $html): ?string {
+    if (!preg_match('#<title[^>]*>(.*?)</title>#is', $html, $m)) return null;
+    $t = trim(preg_replace('/\s+/', ' ', html_entity_decode(strip_tags($m[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+    return $t === '' ? null : mb_substr($t, 0, 150);
 }
 
 function feedback_new_token(): string {
@@ -56,6 +91,7 @@ function feedback_fetch(string $url): array {
 
         $body = '';
         $tooBig = false;
+        $challenged = false;
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_FOLLOWLOCATION => false,
@@ -67,6 +103,10 @@ function feedback_fetch(string $url): array {
             CURLOPT_HTTPHEADER     => ['Accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.5'],
             // Pin the connection to the address we just vetted (no DNS rebinding).
             CURLOPT_RESOLVE        => [$host . ':' . $port . ':' . (str_contains($ips[0], ':') ? '[' . $ips[0] . ']' : $ips[0])],
+            CURLOPT_HEADERFUNCTION => function ($ch, $line) use (&$challenged) {
+                if (preg_match('/^cf-mitigated:\s*challenge/i', $line)) $challenged = true;
+                return strlen($line);
+            },
             CURLOPT_WRITEFUNCTION  => function ($ch, $chunk) use (&$body, &$tooBig) {
                 $body .= $chunk;
                 if (strlen($body) > FEEDBACK_MAX_BYTES) { $tooBig = true; return 0; }
@@ -82,6 +122,12 @@ function feedback_fetch(string $url): array {
         if ($tooBig) throw new RuntimeException('That page is larger than 5 MB');
         if ($ok === false) throw new RuntimeException('Couldn’t load the page: ' . $err);
         if ($status >= 300 && $status < 400 && $redirect !== '') { $url = $redirect; continue; }
+        if ($challenged) {
+            throw new RuntimeException('The site’s bot protection (Cloudflare) blocked YaHerd. Open the page in Chrome with the YaHerd extension instead — it saves the page from your browser.');
+        }
+        if ($status === 401 || $status === 403) {
+            throw new RuntimeException("The site refused YaHerd (HTTP $status). If it loads in your browser, open it with the YaHerd extension instead — it saves the page from your browser.");
+        }
         if ($status >= 400) throw new RuntimeException("The site answered with HTTP $status");
         if ($ctype !== '' && !preg_match('#text/html|application/xhtml#i', $ctype)) {
             throw new RuntimeException('That URL isn’t an HTML page');
@@ -101,15 +147,22 @@ function feedback_fetch(string $url): array {
     throw new RuntimeException('Too many redirects');
 }
 
-// Snapshot $url for page $pageId; returns the final URL after redirects.
-function feedback_take_snapshot(int $pageId, string $url): string {
-    $res = feedback_fetch($url);
+function feedback_store_snapshot(int $pageId, string $html): void {
+    if (strlen($html) > FEEDBACK_MAX_BYTES) throw new RuntimeException('That page is larger than 5 MB');
+    if (!mb_check_encoding($html, 'UTF-8')) $html = mb_convert_encoding($html, 'UTF-8', 'Windows-1252');
     $dir = UPLOAD_DIR . '/snapshots';
     if (!is_dir($dir)) mkdir($dir, 0775, true);
-    if (file_put_contents(feedback_snapshot_path($pageId), $res['html']) === false) {
+    if (file_put_contents(feedback_snapshot_path($pageId), $html) === false) {
         throw new RuntimeException('Couldn’t store the snapshot');
     }
-    return $res['final_url'];
+}
+
+// Fetch $url server-side and store it as page $pageId's snapshot.
+// Returns ['final_url' => ..., 'title' => ?string].
+function feedback_take_snapshot(int $pageId, string $url): array {
+    $res = feedback_fetch($url);
+    feedback_store_snapshot($pageId, $res['html']);
+    return ['final_url' => $res['final_url'], 'title' => feedback_html_title($res['html'])];
 }
 
 function feedback_snapshot_source(int $pageId): ?string {
@@ -246,6 +299,7 @@ function feedback_render_frame(string $src, string $baseUrl, string $parentOrigi
 // opaque origin: no access to YaHerd cookies, storage or same-origin API calls,
 // even if someone opens the frame URL directly.
 function feedback_send_frame(array $page): never {
+    // $page is a feedback_pages row.
     $src = feedback_snapshot_source((int)$page['id']);
     if ($src === null) { http_response_code(404); exit('Snapshot missing'); }
     $isHttps = !empty($_SERVER['HTTPS']) || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
@@ -259,14 +313,42 @@ function feedback_send_frame(array $page): never {
     exit;
 }
 
-function feedback_page_by_token(string $token): ?array {
+function feedback_review_by_token(string $token): ?array {
     $stmt = db()->prepare(
-        "SELECT fp.*, p.name AS project_name FROM feedback_pages fp
-         JOIN projects p ON p.id = fp.project_id
-         WHERE fp.share_token = ? AND p.is_active = 1 AND p.type = 'feedback'"
+        "SELECT r.*, p.name AS project_name FROM feedback_reviews r
+         JOIN projects p ON p.id = r.project_id
+         WHERE r.share_token = ? AND p.is_active = 1 AND p.type = 'feedback'"
     );
     $stmt->execute([$token]);
     return $stmt->fetch() ?: null;
+}
+
+// Pages of a review in the order they were added, with note counts.
+function feedback_review_pages(int $reviewId): array {
+    $stmt = db()->prepare(
+        'SELECT fp.*,
+                (SELECT COUNT(*) FROM feedback_notes n WHERE n.page_id = fp.id) AS note_count,
+                (SELECT COUNT(*) FROM feedback_notes n WHERE n.page_id = fp.id AND n.closed_at IS NOT NULL) AS acked_count
+         FROM feedback_pages fp WHERE fp.review_id = ? ORDER BY fp.created_at, fp.id'
+    );
+    $stmt->execute([$reviewId]);
+    return array_map(fn($r) => [
+        'id'          => (int)$r['id'],
+        'title'       => $r['title'],
+        'url'         => $r['url'],
+        'label'       => feedback_page_label($r['url'], $r['title']),
+        'note_count'  => (int)$r['note_count'],
+        'acked_count' => (int)$r['acked_count'],
+        'snapshot_at' => $r['snapshot_at'],
+        'snapshot_ago'=> $r['snapshot_at'] ? time_ago($r['snapshot_at']) : null,
+    ], $stmt->fetchAll());
+}
+
+// Short label for a page in menus: its <title>, else its path.
+function feedback_page_label(string $url, ?string $title): string {
+    if ($title !== null && $title !== '') return $title;
+    $path = (string)parse_url($url, PHP_URL_PATH);
+    return $path === '' || $path === '/' ? 'Home' : $path;
 }
 
 function feedback_note_out(array $r, int $number): array {
@@ -306,10 +388,36 @@ function feedback_notes(int $pageId): array {
     return $out;
 }
 
-function feedback_share_url(array $page): string {
+// Everything the editor / student view needs up front: every page of the
+// review with its notes, plus which page to show first (?page=, else the
+// first page with open notes, else the first page).
+function feedback_view_data(int $reviewId, ?int $wantPage): array {
+    $pages = [];
+    $current = null;
+    foreach (feedback_review_pages($reviewId) as $pg) {
+        $pg['notes'] = feedback_notes($pg['id']);
+        $pages[] = $pg;
+        if ($wantPage === $pg['id']) $current = $pg['id'];
+    }
+    if ($current === null) {
+        foreach ($pages as $pg) {
+            if ($pg['note_count'] > $pg['acked_count']) { $current = $pg['id']; break; }
+        }
+    }
+    if ($current === null && $pages) $current = $pages[0]['id'];
+    return ['pages' => $pages, 'current' => $current];
+}
+
+function feedback_json_script(array $data): string {
+    return '<script type="application/json" id="fb-initial">'
+        . json_encode($data, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP)
+        . '</script>';
+}
+
+function feedback_share_url(array $review): string {
     $base = APP_BASE_URL !== '' ? rtrim(APP_BASE_URL, '/') : (
         ((!empty($_SERVER['HTTPS']) || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') ? 'https' : 'http')
         . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')
     );
-    return $base . '/f/' . $page['share_token'];
+    return $base . '/f/' . $review['share_token'];
 }

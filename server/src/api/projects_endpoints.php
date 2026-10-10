@@ -132,7 +132,9 @@ route('DELETE', '#^/api/projects/(\d+)$#', function ($id) {
     foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $rel) {
         @unlink(UPLOAD_DIR . '/' . $rel);
     }
-    $pages = db()->prepare('SELECT id FROM feedback_pages WHERE project_id = ?');
+    $pages = db()->prepare(
+        'SELECT fp.id FROM feedback_pages fp JOIN feedback_reviews r ON r.id = fp.review_id WHERE r.project_id = ?'
+    );
     $pages->execute([$id]);
     foreach ($pages->fetchAll(PDO::FETCH_COLUMN) as $pageId) {
         @unlink(feedback_snapshot_path((int)$pageId));
