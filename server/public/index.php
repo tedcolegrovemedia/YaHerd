@@ -22,6 +22,7 @@ require $src . '/helpers.php';
 require $src . '/auth.php';
 require $src . '/mailer.php';
 require $src . '/notifications.php';
+require $src . '/feedback.php';
 require $src . '/router.php';
 
 // Harden the session cookie. Secure flag follows the original protocol when
@@ -75,6 +76,7 @@ if (str_starts_with($path, '/api/')) {
     require $src . '/api/users_endpoints.php';
     require $src . '/api/projects_endpoints.php';
     require $src . '/api/comments_endpoints.php';
+    require $src . '/api/feedback_endpoints.php';
 
     try {
         dispatch($method, $path);
@@ -87,6 +89,16 @@ if (str_starts_with($path, '/api/')) {
 
 // ---------- Dashboard ----------
 $views = dirname(__DIR__) . '/views';
+
+// Public feedback links: no login. /f/<token> is the student view; /frame is
+// the sandboxed page replay it (and the editor) embeds.
+if (preg_match('#^/f/([\w-]{32})(/frame)?$#', $path, $m)) {
+    $sharePage = feedback_page_by_token($m[1]);
+    if (!$sharePage) { http_response_code(404); require $views . '/share_missing.php'; exit; }
+    if (!empty($m[2])) feedback_send_frame($sharePage);
+    require $views . '/share.php';
+    exit;
+}
 
 // First run: no users yet -> force admin creation.
 $userCount = (int)db()->query('SELECT COUNT(*) FROM users')->fetchColumn();
@@ -147,6 +159,13 @@ switch ($path) {
     case '/board':
         if (empty($_GET['project'])) { header('Location: /'); exit; }
         require $views . '/board.php';
+        break;
+    case '/feedback':
+        if (empty($_GET['project'])) { header('Location: /'); exit; }
+        require $views . '/feedback.php';
+        break;
+    case '/feedback/page':
+        require $views . '/feedback_editor.php';
         break;
     case '/task':
         require $views . '/task_detail.php';

@@ -173,11 +173,31 @@ document.addEventListener('submit', async (ev) => {
     try {
       await api('POST', '/api/projects', {
         name: f.get('name'),
+        type: f.get('type') || 'collab',
         base_origin: f.get('base_origin'),
         match_subdomains: !!f.get('match_subdomains'),
       });
       location.reload();
     } catch (e) { toast(e.message, true); }
+  }
+
+  if (form.id === 'add-page-form') {
+    ev.preventDefault();
+    const f = new FormData(form);
+    const btn = form.querySelector('button[type=submit]');
+    btn.disabled = true;
+    btn.textContent = 'Taking snapshot…';
+    try {
+      const res = await api('POST', `/api/feedback/projects/${form.dataset.project}/pages`, {
+        url: f.get('url'),
+        title: f.get('title'),
+      });
+      location.href = `/feedback/page?id=${res.id}`;
+    } catch (e) {
+      toast(e.message, true);
+      btn.disabled = false;
+      btn.textContent = 'Snapshot & start reviewing';
+    }
   }
 
   if (form.classList.contains('pw-form')) {
@@ -498,3 +518,35 @@ document.addEventListener('click', async (ev) => {
   });
   ta.addEventListener('blur', () => setTimeout(close, 120));
 })();
+
+// ----- Admin: project type switches which create-project fields apply -----
+document.addEventListener('change', (ev) => {
+  if (!ev.target.matches('#create-project-form input[name=type]')) return;
+  const collab = ev.target.value === 'collab';
+  document.querySelectorAll('#create-project-form .collab-only').forEach((el) => {
+    el.hidden = !collab;
+    el.querySelectorAll('input').forEach((i) => { if (i.name === 'base_origin') i.required = collab; });
+  });
+});
+
+// ----- Feedback project: copy share link / delete page -----
+document.addEventListener('click', async (ev) => {
+  const copy = ev.target.closest('.copy-share');
+  if (copy) {
+    try {
+      await navigator.clipboard.writeText(copy.dataset.url);
+      toast('Share link copied');
+    } catch (_) {
+      prompt('Copy this link:', copy.dataset.url);
+    }
+    return;
+  }
+  const del = ev.target.closest('.delete-fb-page');
+  if (!del) return;
+  if (!confirm(`Delete "${del.dataset.name}"? Its comments and share link stop working. This cannot be undone.`)) return;
+  try {
+    await api('DELETE', `/api/feedback/pages/${del.dataset.page}`);
+    del.closest('.fb-page-row').remove();
+    toast('Page deleted');
+  } catch (e) { toast(e.message, true); }
+});

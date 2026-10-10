@@ -90,4 +90,51 @@ db()->exec(
      ) ENGINE=InnoDB'
 );
 
+// Feedback projects: project type, origin optional, review pages + notes.
+if (!db()->query("SHOW COLUMNS FROM projects LIKE 'type'")->fetch()) {
+    db()->exec("ALTER TABLE projects ADD COLUMN type ENUM('collab','feedback') NOT NULL DEFAULT 'collab' AFTER name");
+    db()->exec('ALTER TABLE projects MODIFY base_origin VARCHAR(190) NULL');
+    echo "added projects.type\n";
+}
+db()->exec(
+    'CREATE TABLE IF NOT EXISTS feedback_pages (
+       id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+       project_id    INT UNSIGNED NOT NULL,
+       title         VARCHAR(150) NOT NULL,
+       url           VARCHAR(1000) NOT NULL,
+       final_url     VARCHAR(1000) NOT NULL,
+       share_token   CHAR(32) NOT NULL UNIQUE,
+       snapshot_at   DATETIME NULL,
+       created_by    INT UNSIGNED NULL,
+       created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+       KEY idx_project (project_id),
+       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+       FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+     ) ENGINE=InnoDB'
+);
+db()->exec(
+    'CREATE TABLE IF NOT EXISTS feedback_notes (
+       id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+       page_id         INT UNSIGNED NOT NULL,
+       author_id       INT UNSIGNED NULL,
+       body            TEXT NOT NULL,
+       anchor_selector VARCHAR(1000) NULL,
+       anchor_offset_x FLOAT NULL,
+       anchor_offset_y FLOAT NULL,
+       anchor_text     VARCHAR(200) NULL,
+       fallback_x      INT NOT NULL DEFAULT 0,
+       fallback_y      INT NOT NULL DEFAULT 0,
+       viewport_w      INT NOT NULL DEFAULT 0,
+       code_start      INT NULL,
+       code_end        INT NULL,
+       code_excerpt    TEXT NULL,
+       closed_at       DATETIME NULL,
+       created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+       updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+       KEY idx_page (page_id),
+       FOREIGN KEY (page_id)   REFERENCES feedback_pages(id) ON DELETE CASCADE,
+       FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL
+     ) ENGINE=InnoDB'
+);
+
 echo "migrations complete\n";

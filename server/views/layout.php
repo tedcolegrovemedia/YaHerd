@@ -16,7 +16,8 @@ function user_initials(string $name): string {
     return mb_strtoupper($first . $last) ?: '?';
 }
 
-function layout_top(string $title, ?array $me = null): void {
+// $wide drops the centered max-width (used by the full-bleed feedback editor).
+function layout_top(string $title, ?array $me = null, bool $wide = false): void {
     $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
     $unread = $me ? unread_notification_count((int)$me['id']) : 0;
     ?><!doctype html>
@@ -55,13 +56,13 @@ function layout_top(string $title, ?array $me = null): void {
   </div>
   <?php endif; ?>
 </header>
-<main id="main">
+<main id="main"<?= $wide ? ' class="wide"' : '' ?>>
 <?php
 }
 
 const EXTENSION_DOWNLOAD_URL = 'https://github.com/tedcolegrovemedia/YaHerd/releases/latest/download/YaHerd-extension.zip';
 
-function layout_bottom(): void {
+function layout_bottom(array $scripts = []): void {
     ?></main>
 <footer class="site-footer">
   <a class="ext-download" href="<?= EXTENSION_DOWNLOAD_URL ?>">
@@ -74,6 +75,9 @@ function layout_bottom(): void {
   <span class="footer-hint">Unzip, then load it at <code>chrome://extensions</code> → Developer mode → Load unpacked.</span>
 </footer>
 <script src="/assets/dashboard.js?v=<?= filemtime(dirname(__DIR__) . '/public/assets/dashboard.js') ?>"></script>
+<?php foreach ($scripts as $js): ?>
+<script src="/assets/<?= e($js) ?>?v=<?= filemtime(dirname(__DIR__) . '/public/assets/' . $js) ?>"></script>
+<?php endforeach; ?>
 </body>
 </html><?php
 }

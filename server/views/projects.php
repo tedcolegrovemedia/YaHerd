@@ -29,6 +29,13 @@ if ($projects) {
            AND c.archived_at IS NULL
          GROUP BY c.project_id"
     ) as $r) $stats[(int)$r['project_id']]['latest_shot'] = (int)$r['latest_shot'];
+    foreach (db()->query(
+        "SELECT fp.project_id, COUNT(DISTINCT fp.id) AS pages,
+                SUM(n.id IS NOT NULL AND n.closed_at IS NULL) AS fb_open,
+                SUM(n.closed_at IS NOT NULL) AS fb_closed
+         FROM feedback_pages fp LEFT JOIN feedback_notes n ON n.page_id = fp.id
+         WHERE fp.project_id IN ($ids) GROUP BY fp.project_id"
+    ) as $r) $stats[(int)$r['project_id']] = ($stats[(int)$r['project_id']] ?? []) + $r;
 }
 
 layout_top('Projects', $me);
@@ -42,6 +49,21 @@ layout_top('Projects', $me);
 
 <div class="project-grid">
 <?php foreach ($projects as $p): $pid = (int)$p['id']; $s = $stats[$pid] ?? []; ?>
+  <?php if ($p['type'] === 'feedback'): ?>
+  <a class="project-tile" href="/feedback?project=<?= $pid ?>">
+    <div class="tile-shot">
+      <div class="tile-placeholder tile-feedback"><span><?= e(mb_strtoupper(mb_substr($p['name'], 0, 1))) ?></span></div>
+    </div>
+    <div class="tile-body">
+      <strong><?= e($p['name']) ?></strong>
+      <span class="tile-origin">Feedback · <?= (int)($s['pages'] ?? 0) ?> page<?= (int)($s['pages'] ?? 0) === 1 ? '' : 's' ?></span>
+      <span class="tile-counts">
+        <span class="pill pill-queued"><?= (int)($s['fb_open'] ?? 0) ?> pending</span>
+        <span class="pill pill-complete"><?= (int)($s['fb_closed'] ?? 0) ?> acknowledged</span>
+      </span>
+    </div>
+  </a>
+  <?php continue; endif; ?>
   <a class="project-tile" href="/board?project=<?= $pid ?>">
     <div class="tile-shot">
       <?php if ($p['cover_path']): ?>

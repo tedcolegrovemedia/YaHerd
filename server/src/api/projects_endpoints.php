@@ -2,13 +2,15 @@
 
 route('GET', '#^/api/projects$#', function () {
     $u = require_auth();
+    // Only collaborative projects: this list drives the extension, and
+    // feedback projects have no site origin to match.
     if ($u['role'] === 'admin') {
-        $rows = db()->query('SELECT * FROM projects ORDER BY name')->fetchAll();
+        $rows = db()->query("SELECT * FROM projects WHERE type = 'collab' ORDER BY name")->fetchAll();
     } else {
         $stmt = db()->prepare(
-            'SELECT p.* FROM projects p
+            "SELECT p.* FROM projects p
              JOIN project_users pu ON pu.project_id = p.id
-             WHERE pu.user_id = ? AND p.is_active = 1 ORDER BY p.name'
+             WHERE pu.user_id = ? AND p.is_active = 1 AND p.type = 'collab' ORDER BY p.name"
         );
         $stmt->execute([$u['id']]);
         $rows = $stmt->fetchAll();
@@ -82,15 +84,18 @@ route('GET', '#^/api/projects/(\d+)/cover$#', function ($id) {
 route('POST', '#^/api/projects$#', function () {
     require_admin();
     $in = read_json_body();
-    $origin = origin_of($in['base_origin'] ?? '');
-    if (empty($in['name']) || !$origin) {
-        json_out(['error' => 'name and a valid base_origin (URL or domain) required'], 422);
+    $type = ($in['type'] ?? 'collab') === 'feedback' ? 'feedback' : 'collab';
+    if (trim($in['name'] ?? '') === '') json_out(['error' => 'name required'], 422);
+    $origin = null;
+    if ($type === 'collab') {
+        $origin = origin_of($in['base_origin'] ?? '');
+        if (!$origin) json_out(['error' => 'a valid site URL or domain is required'], 422);
     }
     $stmt = db()->prepare(
-        'INSERT INTO projects (name, base_origin, match_subdomains) VALUES (?, ?, ?)'
+        'INSERT INTO projects (name, type, base_origin, match_subdomains) VALUES (?, ?, ?, ?)'
     );
     try {
-        $stmt->execute([trim($in['name']), $origin, !empty($in['match_subdomains']) ? 1 : 0]);
+        $stmt->execute([trim($in['name']), $type, $origin, $type === 'collab' && !empty($in['match_subdomains']) ? 1 : 0]);
     } catch (PDOException $e) {
         if ($e->getCode() === '23000') json_out(['error' => 'a project with that origin already exists'], 409);
         throw $e;
@@ -126,6 +131,11 @@ route('DELETE', '#^/api/projects/(\d+)$#', function ($id) {
     $stmt->execute([$id]);
     foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $rel) {
         @unlink(UPLOAD_DIR . '/' . $rel);
+    }
+    $pages = db()->prepare('SELECT id FROM feedback_pages WHERE project_id = ?');
+    $pages->execute([$id]);
+    foreach ($pages->fetchAll(PDO::FETCH_COLUMN) as $pageId) {
+        @unlink(feedback_snapshot_path((int)$pageId));
     }
     $cover = db()->prepare('SELECT cover_path FROM projects WHERE id = ?');
     $cover->execute([$id]);

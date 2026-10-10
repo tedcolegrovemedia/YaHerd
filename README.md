@@ -14,10 +14,19 @@ A self-hosted, BugHerd-style visual feedback tool. Reviewers browse the **real l
 
 ## Feature overview
 
+Projects come in two types, chosen when you create one (**Admin → Projects**):
+
+- **Collaborative**: the original flow. Your team pins comments on the live site with the Chrome extension and works them on a board.
+- **Feedback**: one-sided review, e.g. a teacher grading student sites. Paste a page URL, pin comments on a snapshot of it in the dashboard (no extension), and send the student a link. Students need no login: they see the page with numbered pins, read each comment (optionally with the exact HTML lines it refers to), and click **Got it** to acknowledge it.
+
+Collaborative features:
+
 - **Projects gallery** (`/`) — cover image + open/working/done counts per project.
 - **Board** (`/board?project=N`) — drag cards between queued / working on / complete. Each card can be assigned, archived, or deleted. A **🗄 Archived** toggle opens the archived list (restore or delete).
 - **Task detail** (`/task?id=N`) — screenshot, status, assignee, replies, and Archive/Delete actions.
 - **Account** (`/account`, click your name) — change your own password, toggle which activity emails you receive, and a **notifications center** (in-app inbox) with an unread badge on your avatar.
+- **Feedback pages** (`/feedback?project=N`): add a page by URL (it's snapshotted right away), then **Review** opens the editor (`/feedback/page?id=N`): click **+ Add comment**, click any element, write the note, and optionally attach that element's source lines (pre-selected, adjustable). Toolbar: desktop/tablet/phone preview widths, **Refresh snapshot**, **Student view**, **Reset link** (revokes the old link), **Copy share link**.
+- **Share link** (`/f/<token>`): public, `noindex`, read-only except the per-comment **Got it** acknowledgment, which shows up in the editor and in the pages list counts.
 - **Admin** — split into **Projects** (`/admin`) and **Users** (`/admin/users`) tabs. Create/delete projects, create/delete/deactivate users, reset passwords, and assign members with a name/email typeahead.
 
 ## For testers: install the extension
@@ -91,7 +100,7 @@ Load the extension unpacked as above and point its Server URL at `http://localho
 
 YaHerd is plain PHP + MySQL with **no Composer/framework/build step**, so it runs on standard cPanel-style shared hosting. The Docker path is just a convenience. To install on a LAMP host by hand:
 
-**Requirements:** PHP **8.1+** (uses the `never` return type), MySQL/MariaDB, Apache with `mod_rewrite` (or Nginx equivalent), HTTPS (AutoSSL/Let's Encrypt — needed for the secure session cookie and the extension), and — for email — outbound SMTP on port 587 or PHP `mail()`.
+**Requirements:** PHP **8.1+** (uses the `never` return type) with the `curl` extension (Feedback snapshots), MySQL/MariaDB, Apache with `mod_rewrite` (or Nginx equivalent), HTTPS (AutoSSL/Let's Encrypt — needed for the secure session cookie and the extension), and — for email — outbound SMTP on port 587 or PHP `mail()`.
 
 **1. Files & document root.** Upload the repo so the `server/` folder stays intact (the code uses relative `dirname()` paths). Point the domain's document root at `server/public/`. If the host forces `public_html` as the docroot, put the *contents* of `server/public/` in `public_html/` and keep `server/src`, `server/views`, and `server/storage` **above** the web root.
 
@@ -128,4 +137,5 @@ SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
 - **Assignment**: every task can be assigned to a project member — from the board card, the task detail page, or the pin bubble in the extension.
 - **Archiving**: archiving a task hides it from the board, the project counts, and the live page/extension pins (reversible from the Archived view). **Deleting** removes it permanently along with its replies and screenshot (admin or the task's author only).
 - **Notifications**: six activity triggers — new user, password change, added to a project, assigned a task, a reply on a task, and a task status change. Each creates an **in-app notification** (avatar badge + Account-page inbox) and sends an **email**, except the person who performed the action. Email is gated by per-user preferences on the Account page (`notify_*` columns); account/password emails always send. In-app records live in the `notifications` table; the mailer (`server/src/mailer.php`) and triggers (`server/src/notifications.php`) are the two files to look at.
-- **Migrations**: existing installs upgrade by running `php server/src/migrate.php` after deploying new code (idempotent). It adds columns/tables introduced since the original schema (assignee, cover image, notification prefs, in-app notifications, task archiving, nullable comment authors).
+- **Feedback snapshots**: the server fetches the page's HTML (redirects re-checked hop by hop; loopback/private/reserved addresses refused unless `FEEDBACK_ALLOW_PRIVATE_HOSTS` is defined as `true` in `config.php`; 5 MB cap) and stores it at `UPLOAD_DIR/snapshots/<page id>.html`. On replay every element is tagged with its source line range (`data-lf-src`), a `<base href>` makes the student's CSS/images/JS load from their site, and an overlay script draws the pins. The replay is served with `Content-Security-Policy: sandbox allow-scripts …` and embedded in a sandboxed iframe, so the student's scripts run in an opaque origin with no access to YaHerd cookies or the API. Code excerpts (max 80 lines) are copied into the comment when saved, so they survive later snapshot refreshes. Logic: `server/src/feedback.php`, `server/src/api/feedback_endpoints.php`, `server/public/assets/lf-frame.js` (inside the replay) and `feedback.js` (editor + student view).
+- **Migrations**: existing installs upgrade by running `php server/src/migrate.php` after deploying new code (idempotent). It adds columns/tables introduced since the original schema (assignee, cover image, notification prefs, in-app notifications, task archiving, nullable comment authors, project type + feedback pages/notes). Existing projects become **Collaborative** projects; nothing is removed or rewritten.

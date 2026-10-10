@@ -32,10 +32,18 @@ layout_top('Admin — Projects', $me);
   <div class="project-card <?= (int)$p['is_active'] ? '' : 'inactive' ?>">
     <div class="project-head">
       <strong><?= e($p['name']) ?></strong>
-      <a href="<?= e($p['base_origin']) ?>" target="_blank" rel="noopener"><?= e($p['base_origin']) ?></a>
-      <?= (int)$p['match_subdomains'] ? '<span class="tag">+ subdomains</span>' : '' ?>
+      <?php if ($p['type'] === 'feedback'): ?>
+        <span class="tag tag-feedback">Feedback</span>
+      <?php else: ?>
+        <a href="<?= e($p['base_origin']) ?>" target="_blank" rel="noopener"><?= e($p['base_origin']) ?></a>
+        <?= (int)$p['match_subdomains'] ? '<span class="tag">+ subdomains</span>' : '' ?>
+      <?php endif; ?>
       <?= (int)$p['is_active'] ? '' : '<span class="tag off">inactive</span>' ?>
-      <a class="boardlink" href="/board?project=<?= $pid ?>">Board →</a>
+      <?php if ($p['type'] === 'feedback'): ?>
+        <a class="boardlink" href="/feedback?project=<?= $pid ?>">Pages →</a>
+      <?php else: ?>
+        <a class="boardlink" href="/board?project=<?= $pid ?>">Board →</a>
+      <?php endif; ?>
       <button type="button" class="delete-project linklike-danger" data-project="<?= $pid ?>"
               data-name="<?= e($p['name']) ?>">Delete</button>
     </div>
@@ -61,9 +69,20 @@ layout_top('Admin — Projects', $me);
 
   <h3>Create project</h3>
   <form id="create-project-form" class="stack">
+    <fieldset class="type-pick">
+      <legend>Type</legend>
+      <label class="type-opt">
+        <input type="radio" name="type" value="collab" checked>
+        <span><strong>Collaborative</strong><small>Your team pins comments on the live site with the Chrome extension, then works through them on a task board.</small></span>
+      </label>
+      <label class="type-opt">
+        <input type="radio" name="type" value="feedback">
+        <span><strong>Feedback</strong><small>You comment on page snapshots and send each one as a link. No login or extension needed to view.</small></span>
+      </label>
+    </fieldset>
     <label>Name <input name="name" required placeholder="Acme marketing site"></label>
-    <label>Site URL or domain <input name="base_origin" required placeholder="https://www.acme.com"></label>
-    <label class="check"><input type="checkbox" name="match_subdomains" value="1"> Also match subdomains</label>
+    <label class="collab-only">Site URL or domain <input name="base_origin" required placeholder="https://www.acme.com"></label>
+    <label class="check collab-only"><input type="checkbox" name="match_subdomains" value="1"> Also match subdomains</label>
     <button type="submit">Create project</button>
   </form>
 </section>

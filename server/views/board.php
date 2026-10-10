@@ -3,17 +3,21 @@ require __DIR__ . '/layout.php';
 
 // Projects visible to me
 if ($me['role'] === 'admin') {
-    $projects = db()->query('SELECT * FROM projects ORDER BY name')->fetchAll();
+    $projects = db()->query("SELECT * FROM projects WHERE type = 'collab' ORDER BY name")->fetchAll();
 } else {
     $stmt = db()->prepare(
-        'SELECT p.* FROM projects p JOIN project_users pu ON pu.project_id = p.id
-         WHERE pu.user_id = ? AND p.is_active = 1 ORDER BY p.name'
+        "SELECT p.* FROM projects p JOIN project_users pu ON pu.project_id = p.id
+         WHERE pu.user_id = ? AND p.is_active = 1 AND p.type = 'collab' ORDER BY p.name"
     );
     $stmt->execute([$me['id']]);
     $projects = $stmt->fetchAll();
 }
 
 $projectId = (int)($_GET['project'] ?? ($projects[0]['id'] ?? 0));
+// Feedback projects have no board; send old links to their pages list.
+$typeStmt = db()->prepare('SELECT type FROM projects WHERE id = ?');
+$typeStmt->execute([$projectId]);
+if ($typeStmt->fetchColumn() === 'feedback') { header('Location: /feedback?project=' . $projectId); exit; }
 $showArchived = !empty($_GET['archived']);
 $project = null;
 foreach ($projects as $p) if ((int)$p['id'] === $projectId) $project = $p;
