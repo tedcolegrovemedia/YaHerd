@@ -83,8 +83,68 @@
     };
   }
 
+  // Actually painted: has a box, and neither it nor an ancestor is
+  // display:none, visibility:hidden or opacity:0.
+  function isRendered(node) {
+    const r = node.getBoundingClientRect();
+    if (!(r.width || r.height)) return false;
+    if (typeof node.checkVisibility === 'function') {
+      return node.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true });
+    }
+    return true;
+  }
+
+  // The topmost painted page element at a viewport point (our own overlay
+  // and invisible layers skipped). null when the point is off screen.
+  function topElementAt(x, y) {
+    if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return null;
+    for (const e of document.elementsFromPoint(x, y)) {
+      if (e.tagName === 'WEBCOMMENT-ROOT') continue;
+      if (e === document.documentElement || e === document.body) return e;
+      if (isRendered(e)) return e;
+    }
+    return document.documentElement;
+  }
+
+  // Is node the thing you actually see at (x, y)? False when another
+  // section/modal/view has been laid over it — single-page sites often keep
+  // old views in the DOM, fully "visible", just covered by the new one.
+  function isUncovered(node, x, y) {
+    const top = topElementAt(x, y);
+    if (!top) return true; // off screen: caller decides
+    return node.contains(top) || top.contains(node);
+  }
+
+  // A pin dropped on empty page background (no element to anchor to) is
+  // only "here" while nothing covers that spot.
+  function isBareBackground(x, y) {
+    const top = topElementAt(x, y);
+    return !top || top === document.documentElement || top === document.body;
+  }
+
+  // The element under a viewport point for a NEW pin, including elements the
+  // page made click-through (pointer-events: none), which are common on
+  // animated/carousel layouts. Our overlay must already be out of the way.
+  function elementAt(x, y) {
+    const style = document.createElement('style');
+    style.textContent = ':not(webcomment-root) { pointer-events: auto !important; }';
+    (document.head || document.documentElement).appendChild(style);
+    let hit = null;
+    try {
+      for (const e of document.elementsFromPoint(x, y)) {
+        if (e.tagName === 'WEBCOMMENT-ROOT') continue;
+        if (e === document.documentElement || e === document.body || isRendered(e)) { hit = e; break; }
+      }
+    } finally {
+      style.remove();
+    }
+    return hit && hit !== document.documentElement ? hit : document.body;
+  }
+
   // Resolve a stored comment to viewport coords.
-  // Returns { x, y, approximate } in client (viewport) coordinates.
+  // Returns { x, y, approximate, hidden } in client (viewport) coordinates.
+  // hidden: the anchored content isn't what's showing right now (another
+  // view covers it, or it's been hidden) — don't draw the pin.
   //
   // Responsive sites often keep desktop AND mobile copies of the same content
   // in the DOM (one hidden per breakpoint). querySelector alone would find the
@@ -93,10 +153,7 @@
   // as a last resort hunt for the stored text among same-tag elements.
   function resolvePin(c) {
     const stored = c.anchor_text || '';
-    const isVisible = (node) => {
-      const r = node.getBoundingClientRect();
-      return !!(r.width || r.height);
-    };
+    const isVisible = isRendered;
     const textOk = (node) => {
       if (!stored) return true;
       const n = Math.ceil(stored.length / 2);
@@ -104,17 +161,21 @@
     };
     const place = (node) => {
       const rect = node.getBoundingClientRect();
-      return {
-        x: rect.left + (c.anchor_offset_x ?? 0.5) * rect.width,
-        y: rect.top + (c.anchor_offset_y ?? 0.5) * rect.height,
-        approximate: false,
-      };
+      const x = rect.left + (c.anchor_offset_x ?? 0.5) * rect.width;
+      const y = rect.top + (c.anchor_offset_y ?? 0.5) * rect.height;
+      // Covered if neither the pin spot nor the element's middle shows it
+      // (two probes, so a small badge or label over the spot doesn't hide it).
+      const hidden = !isUncovered(node, x, y)
+        && !isUncovered(node, rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return { x, y, approximate: false, hidden };
     };
 
+    let matched = false;
     if (c.anchor_selector) {
       let matches = [];
       try { matches = [...document.querySelectorAll(c.anchor_selector)]; } catch (_) {}
       matches = matches.filter((node) => node.tagName !== 'WEBCOMMENT-ROOT');
+      matched = matches.length > 0;
       const best = matches.find((node) => isVisible(node) && textOk(node));
       if (best) return place(best);
     }
@@ -135,12 +196,15 @@
 
     // Fallback: stored document coords, scaled horizontally for viewport changes.
     const scale = c.viewport_w ? window.innerWidth / c.viewport_w : 1;
-    return {
-      x: c.fallback_x * scale - window.scrollX,
-      y: c.fallback_y - window.scrollY,
-      approximate: true,
-    };
+    const x = c.fallback_x * scale - window.scrollX;
+    const y = c.fallback_y - window.scrollY;
+    // The element is in the page but hidden (another view is showing).
+    if (matched) return { x, y, approximate: true, hidden: true };
+    // Dropped on bare background: show only while that spot is still bare.
+    if (!c.anchor_selector) return { x, y, approximate: true, hidden: !isBareBackground(x, y) };
+    // The element is gone entirely (page redesigned): keep the dashed pin.
+    return { x, y, approximate: true, hidden: false };
   }
 
-  window.WCAnchor = { buildSelector, describePin, resolvePin };
+  window.WCAnchor = { buildSelector, describePin, resolvePin, elementAt };
 })();

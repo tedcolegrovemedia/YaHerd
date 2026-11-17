@@ -125,7 +125,7 @@
         pin.style.top = pos.y + 'px';
         pin.classList.toggle('wc-approx', pos.approximate);
         const off = pos.x < -30 || pos.x > innerWidth + 30 || pos.y < -30 || pos.y > innerHeight + 30;
-        pin.style.display = off ? 'none' : '';
+        pin.style.display = off || pos.hidden ? 'none' : '';
       }
     }
 
@@ -215,11 +215,8 @@
         // their own pointer-events, so hiding the host is not enough) and ask
         // the document what's really under the cursor.
         capture.style.pointerEvents = 'none';
-        const target = document.elementFromPoint(ev.clientX, ev.clientY);
+        const target = window.WCAnchor.elementAt(ev.clientX, ev.clientY);
         capture.style.pointerEvents = '';
-        if (!target || target === document.documentElement || target === this.host) {
-          return document.body;
-        }
         return target;
       };
 

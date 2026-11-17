@@ -156,7 +156,7 @@
         pin.style.top = pos.y + 'px';
         pin.classList.toggle('wc-approx', pos.approximate);
         const off = pos.x < -30 || pos.x > innerWidth + 30 || pos.y < -30 || pos.y > innerHeight + 30;
-        pin.style.display = off ? 'none' : '';
+        pin.style.display = off || pos.hidden ? 'none' : '';
       }
     }
 
@@ -252,9 +252,8 @@
 
       const underlying = (ev) => {
         capture.style.pointerEvents = 'none';
-        const t = document.elementFromPoint(ev.clientX, ev.clientY);
+        const t = window.WCAnchor.elementAt(ev.clientX, ev.clientY);
         capture.style.pointerEvents = '';
-        if (!t || t === document.documentElement || t === this.host) return document.body;
         return t;
       };
 
