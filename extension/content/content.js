@@ -71,11 +71,22 @@
     });
   }
 
+  // The popup saves the page; its files (large) stay here and are uploaded
+  // from here once the popup has the page id.
+  let capturedFiles = [];
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'captureSource') {
       window.WCSource.capturePageSource()
-        .then((cap) => sendResponse({ ok: true, data: cap }))
+        .then(({ files, ...cap }) => { capturedFiles = files || []; sendResponse({ ok: true, data: cap }); })
         .catch((e) => sendResponse({ ok: false, error: e.message }));
+      return true;
+    }
+    if (msg.type === 'uploadFiles') {
+      const api = (method, path, body) => send({ type: 'api', method, path, body });
+      const files = capturedFiles;
+      capturedFiles = [];
+      window.WCSource.uploadFiles(api, msg.pageId, files).then(() => sendResponse({ ok: true }));
       return true;
     }
     if (msg.type === 'reboot') {

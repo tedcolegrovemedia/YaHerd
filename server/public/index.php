@@ -93,8 +93,9 @@ $views = dirname(__DIR__) . '/views';
 // Public feedback links: no login. /f/<token> is the student view of a review;
 // /f/<token>/frame/<page id> is the sandboxed page replay it (and the editor)
 // embeds; /f/<token>/frame/<page id>/asset/<n> serves a script captured with
-// that page's snapshot.
-if (preg_match('#^/f/([\w-]{32})(?:/frame/(\d+)(?:/asset/(\d+))?)?$#', $path, $m)) {
+// that page's snapshot; /f/<token>/frame/<page id>/site/<path> relays a file
+// from the student's site (feedback_send_relay).
+if (preg_match('#^/f/([\w-]{32})(?:/frame/(\d+)(?:/asset/(\d+)|/site/(.*))?)?$#s', $path, $m)) {
     $shareReview = feedback_review_by_token($m[1]);
     if (!$shareReview) { http_response_code(404); require $views . '/share_missing.php'; exit; }
     if (!empty($m[2])) {
@@ -103,6 +104,15 @@ if (preg_match('#^/f/([\w-]{32})(?:/frame/(\d+)(?:/asset/(\d+))?)?$#', $path, $m
         $framePage = $stmt->fetch();
         if (!$framePage) { http_response_code(404); exit('Not found'); }
         if (isset($m[3]) && $m[3] !== '') feedback_send_asset($framePage, (int)$m[3]);
+        if (isset($m[4])) {
+            $isHttps = !empty($_SERVER['HTTPS']) || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
+            $self = ($isHttps ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
+            // Forward the path still percent-encoded, exactly as requested.
+            $prefix = '/f/' . $m[1] . '/frame/' . $m[2] . '/site/';
+            $rawPath = (string)parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+            $rest = str_starts_with($rawPath, $prefix) ? substr($rawPath, strlen($prefix)) : $m[4];
+            feedback_send_relay($framePage, $rest, $self . '/f/' . $m[1] . '/frame/' . (int)$m[2] . '/site/');
+        }
         feedback_send_frame($framePage, $m[1]);
     }
     require $views . '/share.php';

@@ -94,6 +94,9 @@ function feedback_upsert_page(array $review, string $url, ?string $html, bool $r
         $pageId = (int)db()->lastInsertId();
     }
     try {
+        // Files saved with the old snapshot; the extension uploads new ones
+        // after this (feedback_store_files).
+        feedback_clear_files($pageId);
         if ($html !== null) {
             feedback_store_snapshot($pageId, $html);
             feedback_store_assets($pageId, $assets);
@@ -245,6 +248,16 @@ route('POST', '#^/api/feedback/pages/(\d+)/snapshot$#', function ($id) {
         json_out(['error' => $e->getMessage()], 422);
     }
     json_out(['ok' => true]);
+});
+
+// Stylesheets, fonts and images for a page's snapshot, saved by the extension
+// from the reviewer's browser (sent in batches after the page itself).
+route('POST', '#^/api/feedback/pages/(\d+)/files$#', function ($id) {
+    require_auth();
+    $page = feedback_page_for_author((int)$id);
+    $in = read_json_body();
+    $files = isset($in['files']) && is_array($in['files']) ? $in['files'] : [];
+    json_out(['ok' => true, 'stored' => feedback_store_files($page, $files)]);
 });
 
 route('DELETE', '#^/api/feedback/pages/(\d+)$#', function ($id) {

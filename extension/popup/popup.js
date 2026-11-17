@@ -151,13 +151,18 @@ $('fb-start-btn').addEventListener('click', async () => {
   try {
     const cap = await captureTab(tab.id);
     const url = tab.href.split('#')[0];
+    let res;
     if (reviewId) {
-      await send({ type: 'api', method: 'POST', path: `/api/feedback/reviews/${reviewId}/pages`, body: { url, html: cap.html, assets: cap.assets || [] } });
+      res = await send({ type: 'api', method: 'POST', path: `/api/feedback/reviews/${reviewId}/pages`, body: { url, html: cap.html, assets: cap.assets || [] } });
     } else {
-      await send({
+      res = await send({
         type: 'api', method: 'POST', path: `/api/feedback/projects/${$('fb-project').value}/reviews`,
         body: { title, url, site_url: $('fb-site').value.trim(), html: cap.html, assets: cap.assets || [] },
       });
+    }
+    if (res && res.page_id) {
+      btn.textContent = 'Saving its images and styles…';
+      await new Promise((resolve) => chrome.tabs.sendMessage(tab.id, { type: 'uploadFiles', pageId: res.page_id }, () => { void chrome.runtime.lastError; resolve(); }));
     }
     await send({ type: 'invalidateFeedback' });
     chrome.tabs.sendMessage(tab.id, { type: 'reboot' }, () => void chrome.runtime.lastError);

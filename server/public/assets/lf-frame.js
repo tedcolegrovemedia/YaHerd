@@ -13,10 +13,21 @@
   let activeId = null;
   let preview = null;
 
+  // The student's files load through YaHerd's relay (the <base> points at
+  // it), so link URLs come out as relay URLs: map them back to the real site.
+  const RELAY = window.__LF && window.__LF.relay;
+  function siteUrl(u) {
+    try {
+      const x = new URL(u, document.baseURI).href;
+      if (RELAY && x.startsWith(RELAY.prefix)) return RELAY.origin + '/' + x.slice(RELAY.prefix.length);
+      return x;
+    } catch (_) { return u; }
+  }
+
   // Same canonical form as feedback_normalize_url() on the server.
   function normUrl(u) {
     try {
-      const x = new URL(u, document.baseURI);
+      const x = new URL(siteUrl(u));
       if (!/^https?:$/.test(x.protocol)) return null;
       return x.protocol + '//' + x.host + x.pathname.replace(/\/index\.html?$/i, '/') + x.search;
     } catch (_) { return null; }
@@ -282,7 +293,7 @@
     const key = normUrl(a.href);
     const page = key && pages.find((p) => normUrl(p.url) === key);
     if (page) send({ type: 'goto', id: page.id });
-    else window.open(a.href, '_blank', 'noopener');
+    else window.open(siteUrl(a.href), '_blank', 'noopener');
   }, true);
   window.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && picking) { setPicking(false); send({ type: 'pick-cancel' }); }

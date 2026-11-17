@@ -166,14 +166,98 @@
   // original would render a broken page. Then we save the page exactly as it
   // is on screen, with its scripts switched off at replay (marked by
   // data-yaherd-snapshot on <html>) so they can't rebuild it a second time.
+  //
+  // Either way, files: the stylesheets, fonts and images the page loaded from
+  // its own site, for the replay (see uploadFiles).
   async function capturePageSource() {
     const pageUrl = location.href.split('#')[0];
+    const filesP = captureFiles();
     const html = await fetchText(pageUrl, ['no-store', 'force-cache'], true);
     if (html !== null) {
       const { assets, complete } = await captureScripts(html);
-      if (complete) return { html, rendered: false, assets };
+      if (complete) return { html, rendered: false, assets, files: await filesP };
     }
-    return { html: renderedSnapshot(), rendered: true, assets: [] };
+    return { html: renderedSnapshot(), rendered: true, assets: [], files: await filesP };
+  }
+
+  const MAX_FILE_BYTES = 4 * 1024 * 1024;
+  const MAX_FILES_BYTES = 15 * 1024 * 1024;
+  const MAX_FILES = 300;
+  const BATCH_BYTES = 3 * 1024 * 1024;
+
+  // The page's own-site stylesheets, fonts and images, read from the
+  // browser's cache where possible. The replay can't load them from the
+  // student's site itself when bot protection is on (it has no cookies, and
+  // YaHerd's server gets refused too), so they're saved with the snapshot.
+  // [{url, type, data: base64}, ...], largest-last within the size budget.
+  async function captureFiles() {
+    const urls = new Set();
+    const add = (u) => {
+      try {
+        const x = new URL(u, location.href);
+        if (x.origin === location.origin && x.href.split('#')[0] !== location.href.split('#')[0]) urls.add(x.href.split('#')[0]);
+      } catch (_) {}
+    };
+    for (const e of performance.getEntriesByType('resource')) {
+      // Data requests (fetch/XHR) aren't page files; scripts travel as assets.
+      if (!/^(xmlhttprequest|fetch|beacon|script)$/.test(e.initiatorType)) add(e.name);
+    }
+    document.querySelectorAll('link[rel~="stylesheet"][href], link[rel~="icon"][href]').forEach((l) => add(l.href));
+    for (const img of document.images) if (img.currentSrc) add(img.currentSrc);
+    for (const sh of document.styleSheets) if (sh.href) add(sh.href);
+
+    const got = await Promise.all([...urls].slice(0, MAX_FILES).map(async (url) => {
+      for (const cache of ['force-cache', 'default']) {
+        try {
+          const res = await fetch(url, { credentials: 'include', cache, mode: 'same-origin' });
+          if (!res.ok) continue;
+          const type = res.headers.get('content-type') || '';
+          if (/html/i.test(type)) continue; // challenge or login page
+          const blob = await res.blob();
+          if (blob.size > MAX_FILE_BYTES) return null;
+          return { url, type, blob };
+        } catch (_) { /* try the next mode */ }
+      }
+      return null;
+    }));
+
+    const files = [];
+    let total = 0;
+    for (const f of got.filter(Boolean).sort((a, b) => a.blob.size - b.blob.size)) {
+      if (total + f.blob.size > MAX_FILES_BYTES) break;
+      total += f.blob.size;
+      files.push({ url: f.url, type: f.type, data: await toBase64(f.blob) });
+    }
+    return files;
+  }
+
+  function toBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''));
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(blob);
+    });
+  }
+
+  // Send captured files to a saved page in batches (each request stays well
+  // under the server's upload limit). Best effort: a failed batch only means
+  // those files load from the live site, if they can.
+  async function uploadFiles(api, pageId, files) {
+    let batch = [];
+    let size = 0;
+    const flush = async () => {
+      if (!batch.length) return;
+      try { await api('POST', `/api/feedback/pages/${pageId}/files`, { files: batch }); } catch (e) { console.warn('YaHerd: saving page files failed', e); }
+      batch = [];
+      size = 0;
+    };
+    for (const f of files || []) {
+      if (size + f.data.length > BATCH_BYTES) await flush();
+      batch.push(f);
+      size += f.data.length;
+    }
+    await flush();
   }
 
   function renderedSnapshot() {
@@ -225,5 +309,5 @@
     return { assets, complete };
   }
 
-  window.WCSource = { annotate, SourceMap, capturePageSource };
+  window.WCSource = { annotate, SourceMap, capturePageSource, uploadFiles };
 })();

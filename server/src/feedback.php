@@ -12,6 +12,13 @@ const FEEDBACK_CODE_MAX_LINES = 80;
 const FEEDBACK_MAX_ASSET_BYTES  = 1024 * 1024;
 const FEEDBACK_MAX_ASSETS_BYTES = 3 * 1024 * 1024;
 const FEEDBACK_MAX_ASSETS       = 40;
+// Site files relayed to the replay (see feedback_send_relay).
+const FEEDBACK_RELAY_MAX_BYTES  = 20 * 1024 * 1024;
+const FEEDBACK_RELAY_TTL        = 86400;
+// Stylesheets, fonts and images the extension saved with a page.
+const FEEDBACK_MAX_FILE_BYTES   = 4 * 1024 * 1024;
+const FEEDBACK_MAX_FILES_BYTES  = 15 * 1024 * 1024;
+const FEEDBACK_MAX_FILES        = 300;
 
 function feedback_snapshot_path(int $pageId): string {
     return UPLOAD_DIR . '/snapshots/' . $pageId . '.html';
@@ -21,9 +28,25 @@ function feedback_assets_path(int $pageId): string {
     return UPLOAD_DIR . '/snapshots/' . $pageId . '.assets.json';
 }
 
+function feedback_relay_dir(int $pageId): string {
+    return UPLOAD_DIR . '/snapshots/relay/' . $pageId;
+}
+
+function feedback_files_dir(int $pageId): string {
+    return UPLOAD_DIR . '/snapshots/files/' . $pageId;
+}
+
+function feedback_clear_files(int $pageId): void {
+    foreach (glob(feedback_files_dir($pageId) . '/*') ?: [] as $f) @unlink($f);
+    @rmdir(feedback_files_dir($pageId));
+}
+
 function feedback_delete_snapshot(int $pageId): void {
+    feedback_clear_files($pageId);
     @unlink(feedback_snapshot_path($pageId));
     @unlink(feedback_assets_path($pageId));
+    foreach (glob(feedback_relay_dir($pageId) . '/*') ?: [] as $f) @unlink($f);
+    @rmdir(feedback_relay_dir($pageId));
 }
 
 // Canonical form of a page URL for matching: lowercase scheme/host, no default
@@ -348,8 +371,16 @@ function feedback_annotate(string $html): string {
 // The replay document: annotated snapshot + <base> (so the student's relative
 // CSS/images/scripts load from their site) + our overlay script, inlined so it
 // doesn't depend on the base URL.
-function feedback_render_frame(string $src, string $baseUrl, string $parentOrigin, array $scriptUrls = []): string {
+function feedback_render_frame(string $src, string $baseUrl, string $parentOrigin, array $scriptUrls = [], ?string $relayPrefix = null): string {
     $html = feedback_annotate($src);
+    $relay = null;
+    if ($relayPrefix !== null && ($origin = feedback_url_origin($baseUrl)) !== null) {
+        // Load the student's files through YaHerd (see feedback_send_relay):
+        // relative URLs follow the <base>, absolute ones are rewritten.
+        $relay = ['prefix' => $relayPrefix, 'origin' => $origin];
+        $html = feedback_relay_rewrite($html, $origin, $relayPrefix);
+        $baseUrl = $relayPrefix . ltrim((string)(parse_url($baseUrl, PHP_URL_PATH) ?? ''), '/');
+    }
     if (feedback_is_rendered_snapshot($src)) {
         // A copy of the page as it was on screen: its content is already
         // built, so running its scripts again would build it twice (or fail
@@ -360,7 +391,7 @@ function feedback_render_frame(string $src, string $baseUrl, string $parentOrigi
         $html = feedback_rewrite_script_srcs($html, $scriptUrls);
     }
     $script = file_get_contents(dirname(__DIR__) . '/public/assets/lf-frame.js');
-    $config = json_encode(['parentOrigin' => $parentOrigin], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG);
+    $config = json_encode(['parentOrigin' => $parentOrigin, 'relay' => $relay], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG);
     $inject = '';
     if (!preg_match('/<base\s[^>]*href/i', $html)) {
         $inject .= '<base href="' . e($baseUrl) . '">';
@@ -397,7 +428,8 @@ function feedback_send_frame(array $page, string $token): never {
     foreach (feedback_snapshot_assets((int)$page['id']) as $i => $a) {
         $scriptUrls[$a['src']] = $parentOrigin . '/f/' . $token . '/frame/' . (int)$page['id'] . '/asset/' . $i;
     }
-    echo feedback_render_frame($src, $page['final_url'], $parentOrigin, $scriptUrls);
+    $relayPrefix = $parentOrigin . '/f/' . $token . '/frame/' . (int)$page['id'] . '/site/';
+    echo feedback_render_frame($src, $page['final_url'], $parentOrigin, $scriptUrls, $relayPrefix);
     exit;
 }
 
@@ -412,6 +444,177 @@ function feedback_send_asset(array $page, int $index): never {
     header('Cross-Origin-Resource-Policy: cross-origin');
     header('Cache-Control: private, max-age=300');
     echo $assets[$index]['body'];
+    exit;
+}
+
+// ---------- Relay: the student's site files, served through YaHerd ----------
+// The replay runs in a cookieless sandbox, and bot protection on many student
+// sites (Cloudflare) refuses its requests for stylesheets, fonts and images.
+// So the replay's <base> points here. Each file is served from the copy the
+// extension saved with the snapshot when there is one; otherwise YaHerd
+// fetches it from the page's own origin — never any other host — caches it
+// and passes it on. (Strict bot protection refuses YaHerd's server too, so on
+// those sites only the saved copies load.)
+
+function feedback_url_origin(string $url): ?string {
+    $p = parse_url($url);
+    $scheme = strtolower($p['scheme'] ?? '');
+    if (!in_array($scheme, ['http', 'https'], true) || empty($p['host'])) return null;
+    $origin = $scheme . '://' . strtolower($p['host']);
+    if (!empty($p['port']) && (int)$p['port'] !== ($scheme === 'https' ? 443 : 80)) $origin .= ':' . (int)$p['port'];
+    return $origin;
+}
+
+// Absolute references to the student's own origin ("https://site/x.png",
+// "//site/x.png") go through the relay too. Text replacement only, so line
+// structure (and data-lf-src line numbers) is untouched.
+function feedback_relay_rewrite(string $text, string $origin, string $prefix): string {
+    $hostPart = preg_replace('#^https?:#', '', $origin); // "//host[:port]"
+    return preg_replace(
+        '#(?<![\w.-])(?:https?:)?' . preg_quote($hostPart, '#') . '/#i',
+        $prefix,
+        $text
+    ) ?? $text;
+}
+
+// GET one file from the student's site. Redirects are followed only within
+// the same origin; every hop is resolved and pinned to a vetted public IP.
+// Returns ['status' => int, 'type' => string, 'body' => string].
+function feedback_relay_fetch(string $url, string $origin): array {
+    for ($hop = 0; $hop <= FEEDBACK_MAX_REDIRECTS; $hop++) {
+        if (feedback_url_origin($url) !== $origin) return ['status' => 502, 'type' => '', 'body' => ''];
+        $p = parse_url($url);
+        $scheme = strtolower($p['scheme']);
+        $host = trim($p['host'], '[]');
+        $port = (int)($p['port'] ?? ($scheme === 'https' ? 443 : 80));
+        $ips = feedback_public_ips($host);
+
+        $body = '';
+        $tooBig = false;
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_TIMEOUT        => 30,
+            CURLOPT_PROTOCOLS      => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_ENCODING       => '',
+            CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; YaHerd-Feedback/1.0)',
+            CURLOPT_HTTPHEADER     => ['Accept: */*'],
+            CURLOPT_RESOLVE        => [$host . ':' . $port . ':' . (str_contains($ips[0], ':') ? '[' . $ips[0] . ']' : $ips[0])],
+            CURLOPT_WRITEFUNCTION  => function ($ch, $chunk) use (&$body, &$tooBig) {
+                $body .= $chunk;
+                if (strlen($body) > FEEDBACK_RELAY_MAX_BYTES) { $tooBig = true; return 0; }
+                return strlen($chunk);
+            },
+        ]);
+        $ok = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $type = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        $redirect = (string)curl_getinfo($ch, CURLINFO_REDIRECT_URL);
+        if ($tooBig) return ['status' => 413, 'type' => '', 'body' => ''];
+        if ($ok === false) return ['status' => 502, 'type' => '', 'body' => ''];
+        if ($status >= 300 && $status < 400 && $redirect !== '') { $url = $redirect; continue; }
+        return ['status' => $status, 'type' => $type, 'body' => $body];
+    }
+    return ['status' => 508, 'type' => '', 'body' => ''];
+}
+
+// Files the extension read from the reviewer's browser when it saved the
+// page: [['url' => absolute URL on the page's origin, 'type' => content type,
+// 'data' => base64], ...]. Added to what's already stored (the extension
+// sends them in batches; saving the page again clears them first).
+function feedback_store_files(array $page, array $files): int {
+    $origin = feedback_url_origin((string)$page['final_url']);
+    if ($origin === null) return 0;
+    $dir = feedback_files_dir((int)$page['id']);
+    $existing = glob($dir . '/*.bin') ?: [];
+    $count = count($existing);
+    $total = array_sum(array_map('filesize', $existing));
+    $stored = 0;
+    foreach ($files as $f) {
+        if (!is_array($f) || !is_string($f['url'] ?? null) || !is_string($f['data'] ?? null)) continue;
+        $url = explode('#', $f['url'], 2)[0];
+        if (strlen($url) > 2000 || feedback_url_origin($url) !== $origin) continue;
+        $body = base64_decode($f['data'], true);
+        if ($body === false || strlen($body) > FEEDBACK_MAX_FILE_BYTES) continue;
+        if ($count >= FEEDBACK_MAX_FILES || $total + strlen($body) > FEEDBACK_MAX_FILES_BYTES) break;
+        $type = is_string($f['type'] ?? null) ? substr(preg_replace('/[^\w.+\/;=\- ]/', '', $f['type']), 0, 100) : '';
+        if (preg_match('#html|javascript#i', $type)) continue; // pages and scripts aren't page files
+        if (!is_dir($dir)) mkdir($dir, 0775, true);
+        $key = $dir . '/' . sha1(feedback_file_key($url));
+        if (!is_file($key . '.bin')) $count++;
+        file_put_contents($key . '.bin', $body);
+        file_put_contents($key . '.json', json_encode(['url' => $url, 'type' => $type]));
+        $total += strlen($body);
+        $stored++;
+    }
+    return $stored;
+}
+
+// Lookup key for a saved file: origin (lowercased by feedback_url_origin's
+// callers) + path + query, as the browser wrote it.
+function feedback_file_key(string $url): string {
+    $origin = feedback_url_origin($url) ?? '';
+    $p = parse_url($url);
+    return $origin . ($p['path'] ?? '/') . (isset($p['query']) ? '?' . $p['query'] : '');
+}
+
+function feedback_saved_file(int $pageId, string $url): ?array {
+    $key = feedback_files_dir($pageId) . '/' . sha1(feedback_file_key($url));
+    if (!is_file($key . '.bin')) return null;
+    $meta = json_decode((string)@file_get_contents($key . '.json'), true);
+    return ['status' => 200, 'type' => (string)($meta['type'] ?? ''), 'body' => (string)file_get_contents($key . '.bin')];
+}
+
+// Serve $rest (the path after /site/, plus the request's query string) from
+// the page's origin. $page is a feedback_pages row.
+function feedback_send_relay(array $page, string $rest, string $relayPrefix): never {
+    // Whatever this turns out to be, it must never run as a YaHerd page.
+    header_remove('X-Frame-Options');
+    header('Content-Security-Policy: sandbox allow-scripts');
+    header('X-Content-Type-Options: nosniff');
+    header('Access-Control-Allow-Origin: *');
+    header('Cross-Origin-Resource-Policy: cross-origin');
+    header('Referrer-Policy: no-referrer');
+
+    $origin = feedback_url_origin((string)$page['final_url']);
+    // $rest is still percent-encoded; refuse dot-segments and raw controls.
+    $decoded = rawurldecode($rest);
+    if ($origin === null || preg_match('#(^|/)\.\.?(/|$)#', $decoded) || preg_match('#[\x00-\x20\\\\]#', $rest)) {
+        http_response_code(404); exit;
+    }
+    $query = (string)($_SERVER['QUERY_STRING'] ?? '');
+    $url = $origin . '/' . ltrim($rest, '/') . ($query !== '' ? '?' . $query : '');
+
+    $dir = feedback_relay_dir((int)$page['id']);
+    $key = $dir . '/' . sha1($url);
+    $meta = is_file($key . '.json') ? json_decode((string)file_get_contents($key . '.json'), true) : null;
+    if ($saved = feedback_saved_file((int)$page['id'], $url)) {
+        // Saved from the reviewer's browser with the snapshot.
+        $res = $saved;
+    } elseif (is_array($meta) && time() - (int)($meta['at'] ?? 0) < FEEDBACK_RELAY_TTL && is_file($key . '.bin')) {
+        $res = ['status' => 200, 'type' => (string)$meta['type'], 'body' => (string)file_get_contents($key . '.bin')];
+    } else {
+        try {
+            $res = feedback_relay_fetch($url, $origin);
+        } catch (RuntimeException $e) {
+            http_response_code(502); exit;
+        }
+        if ($res['status'] === 200) {
+            if (!is_dir($dir)) @mkdir($dir, 0775, true);
+            @file_put_contents($key . '.bin', $res['body']);
+            @file_put_contents($key . '.json', json_encode(['url' => $url, 'type' => $res['type'], 'at' => time()]));
+        }
+    }
+
+    if ($res['status'] !== 200) { http_response_code($res['status'] >= 400 ? $res['status'] : 502); exit; }
+    $type = $res['type'] !== '' ? $res['type'] : 'application/octet-stream';
+    $body = $res['body'];
+    // Stylesheets can name the site's own origin in url(...).
+    if (preg_match('#^text/css#i', $type)) $body = feedback_relay_rewrite($body, $origin, $relayPrefix);
+    header('Content-Type: ' . $type);
+    header('Cache-Control: private, max-age=3600');
+    echo $body;
     exit;
 }
 
