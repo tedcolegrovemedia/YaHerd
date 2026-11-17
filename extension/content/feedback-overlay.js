@@ -47,7 +47,7 @@
       this.root.appendChild(style);
       this.layer = el('div', 'wc-layer');
       this.root.appendChild(this.layer);
-      document.documentElement.appendChild(this.host);
+      this.mounted = window.WCMount.mount(this.host);
 
       this.fab = el('button', 'wc-fab wc-fab-fb', '💬');
       this.fab.title = `Feedback: ${this.review.title}`;
@@ -74,7 +74,7 @@
 
     destroy() {
       clearInterval(this._timer);
-      this.host.remove();
+      this.mounted.unmount();
     }
 
     async loadNotes() {
