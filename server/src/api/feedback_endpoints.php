@@ -79,7 +79,7 @@ function feedback_review_out(array $r): array {
 // Add (or, with $replace, re-snapshot) the page at $url in a review. The HTML
 // comes from the extension (captured in the reviewer's browser) when given,
 // else the server fetches it. Returns [pageId, created?].
-function feedback_upsert_page(array $review, string $url, ?string $html, bool $replace, int $userId): array {
+function feedback_upsert_page(array $review, string $url, ?string $html, bool $replace, int $userId, array $assets = []): array {
     $key = feedback_url_key($url);
     $stmt = db()->prepare('SELECT id FROM feedback_pages WHERE review_id = ? AND url_key = ?');
     $stmt->execute([(int)$review['id'], $key]);
@@ -96,21 +96,28 @@ function feedback_upsert_page(array $review, string $url, ?string $html, bool $r
     try {
         if ($html !== null) {
             feedback_store_snapshot($pageId, $html);
+            feedback_store_assets($pageId, $assets);
             $final = $url;
             $title = feedback_html_title($html);
         } else {
             ['final_url' => $final, 'title' => $title] = feedback_take_snapshot($pageId, $url);
+            feedback_store_assets($pageId, []);
         }
     } catch (RuntimeException $e) {
         if (!$existing) {
             db()->prepare('DELETE FROM feedback_pages WHERE id = ?')->execute([$pageId]);
-            @unlink(feedback_snapshot_path($pageId));
+            feedback_delete_snapshot($pageId);
         }
         throw $e;
     }
     db()->prepare('UPDATE feedback_pages SET final_url = ?, title = ?, snapshot_at = NOW() WHERE id = ?')
         ->execute([substr($final, 0, 1000), $title, $pageId]);
     return [$pageId, !$existing];
+}
+
+// Scripts captured with the page by the extension (see feedback_store_assets).
+function feedback_assets_from_input(array $in): array {
+    return isset($in['assets']) && is_array($in['assets']) ? $in['assets'] : [];
 }
 
 function feedback_html_from_input(array $in): ?string {
@@ -171,7 +178,7 @@ route('POST', '#^/api/feedback/projects/(\d+)/reviews$#', function ($pid) {
     $pageId = null;
     $warning = null;
     try {
-        [$pageId] = feedback_upsert_page($review, $url, $html, false, (int)$u['id']);
+        [$pageId] = feedback_upsert_page($review, $url, $html, false, (int)$u['id'], feedback_assets_from_input($in));
     } catch (RuntimeException $e) {
         $warning = $e->getMessage();
     }
@@ -207,7 +214,7 @@ route('DELETE', '#^/api/feedback/reviews/(\d+)$#', function ($id) {
     $stmt->execute([(int)$review['id']]);
     $pageIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
     db()->prepare('DELETE FROM feedback_reviews WHERE id = ?')->execute([(int)$review['id']]);
-    foreach ($pageIds as $pageId) @unlink(feedback_snapshot_path((int)$pageId));
+    foreach ($pageIds as $pageId) feedback_delete_snapshot((int)$pageId);
     json_out(['ok' => true]);
 });
 
@@ -219,7 +226,7 @@ route('POST', '#^/api/feedback/reviews/(\d+)/pages$#', function ($id) {
     $in = read_json_body();
     $url = feedback_url_from_input($in['url'] ?? '');
     try {
-        [$pageId, $created] = feedback_upsert_page($review, $url, feedback_html_from_input($in), !empty($in['replace']), (int)$u['id']);
+        [$pageId, $created] = feedback_upsert_page($review, $url, feedback_html_from_input($in), !empty($in['replace']), (int)$u['id'], feedback_assets_from_input($in));
     } catch (RuntimeException $e) {
         json_out(['error' => $e->getMessage()], 422);
     }
@@ -233,7 +240,7 @@ route('POST', '#^/api/feedback/pages/(\d+)/snapshot$#', function ($id) {
     $page = feedback_page_for_author((int)$id);
     $in = read_json_body();
     try {
-        feedback_upsert_page(['id' => (int)$page['review_id']], $page['url'], feedback_html_from_input($in), true, (int)$u['id']);
+        feedback_upsert_page(['id' => (int)$page['review_id']], $page['url'], feedback_html_from_input($in), true, (int)$u['id'], feedback_assets_from_input($in));
     } catch (RuntimeException $e) {
         json_out(['error' => $e->getMessage()], 422);
     }
@@ -243,7 +250,7 @@ route('POST', '#^/api/feedback/pages/(\d+)/snapshot$#', function ($id) {
 route('DELETE', '#^/api/feedback/pages/(\d+)$#', function ($id) {
     $page = feedback_page_for_author((int)$id);
     db()->prepare('DELETE FROM feedback_pages WHERE id = ?')->execute([(int)$page['id']]);
-    @unlink(feedback_snapshot_path((int)$page['id']));
+    feedback_delete_snapshot((int)$page['id']);
     json_out(['ok' => true]);
 });
 

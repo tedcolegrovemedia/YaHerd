@@ -137,7 +137,7 @@ route('DELETE', '#^/api/projects/(\d+)$#', function ($id) {
     );
     $pages->execute([$id]);
     foreach ($pages->fetchAll(PDO::FETCH_COLUMN) as $pageId) {
-        @unlink(feedback_snapshot_path((int)$pageId));
+        feedback_delete_snapshot((int)$pageId);
     }
     $cover = db()->prepare('SELECT cover_path FROM projects WHERE id = ?');
     $cover->execute([$id]);

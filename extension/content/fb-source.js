@@ -133,19 +133,96 @@
     }
   }
 
-  // The page's original HTML, fetched with the reviewer's own cookies (so
-  // bot protection that already let them in lets this through too). Falls
-  // back to the rendered DOM when the source can't be re-fetched.
+  const MAX_SCRIPT_BYTES = 1024 * 1024;
+  const MAX_SCRIPTS_BYTES = 3 * 1024 * 1024;
+
+  // GET a same-origin URL with the reviewer's cookies, trying each cache mode
+  // in turn. Bot protection (Cloudflare etc.) often challenges script-made
+  // requests even when the page itself loaded, so the copy the browser
+  // already has in its HTTP cache is the fallback. Returns the body, or null
+  // for a failure or a challenge/login page (HTML where we wanted a script).
+  async function fetchText(url, modes, wantHtml) {
+    for (const cache of modes) {
+      try {
+        const res = await fetch(url, { credentials: 'include', cache, mode: 'same-origin' });
+        if (!res.ok) continue;
+        const isHtml = /html/i.test(res.headers.get('content-type') || '');
+        if (isHtml !== wantHtml) continue;
+        return await res.text();
+      } catch (_) { /* not cached / blocked: try the next mode */ }
+    }
+    return null;
+  }
+
+  // Capture what the student's page needs for its saved copy.
+  //
+  // Best case — the original HTML plus every same-origin script it loads
+  // (fetched here, where the reviewer's cookies get past bot protection). The
+  // replay runs those scripts from YaHerd's copies, so dynamic content builds
+  // and the page stays interactive, and line numbers match the real file.
+  //
+  // If any of the site's own scripts can't be captured (e.g. a data endpoint
+  // that bot protection blocks and the cache doesn't hold), replaying the
+  // original would render a broken page. Then we save the page exactly as it
+  // is on screen, with its scripts switched off at replay (marked by
+  // data-yaherd-snapshot on <html>) so they can't rebuild it a second time.
   async function capturePageSource() {
-    try {
-      const res = await fetch(location.href.split('#')[0], { credentials: 'include', cache: 'no-store' });
-      const type = res.headers.get('content-type') || '';
-      if (res.ok && /html/i.test(type)) return { html: await res.text(), rendered: false };
-    } catch (_) {}
+    const pageUrl = location.href.split('#')[0];
+    const html = await fetchText(pageUrl, ['no-store', 'force-cache'], true);
+    if (html !== null) {
+      const { assets, complete } = await captureScripts(html);
+      if (complete) return { html, rendered: false, assets };
+    }
+    return { html: renderedSnapshot(), rendered: true, assets: [] };
+  }
+
+  function renderedSnapshot() {
     const doctype = document.doctype ? `<!DOCTYPE ${document.doctype.name}>\n` : '';
     const clone = document.documentElement.cloneNode(true);
     clone.querySelectorAll('webcomment-root').forEach((n) => n.remove());
-    return { html: doctype + clone.outerHTML, rendered: true };
+    clone.setAttribute('data-yaherd-snapshot', 'rendered');
+    return doctype + clone.outerHTML;
+  }
+
+  // The page's same-origin <script src> files, keyed by the src attribute
+  // exactly as written (what the server matches when it rewrites the
+  // replay). complete: every one of them was captured. Cross-origin scripts
+  // (CDNs) are left to load from their own hosts.
+  async function captureScripts(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const baseEl = doc.querySelector('base[href]');
+    let base = location.href;
+    try { if (baseEl) base = new URL(baseEl.getAttribute('href'), location.href).href; } catch (_) {}
+
+    const seen = new Set();
+    const wanted = [];
+    let complete = true;
+    for (const s of doc.querySelectorAll('script[src]')) {
+      const src = s.getAttribute('src').trim();
+      if (!src || seen.has(src)) continue;
+      let url;
+      try { url = new URL(src, base); } catch (_) { continue; }
+      if (url.origin !== location.origin) continue;
+      seen.add(src);
+      // Modules import their dependencies relative to their own URL, which
+      // would point at YaHerd once moved: can't be replayed from copies.
+      if ((s.getAttribute('type') || '').trim().toLowerCase() === 'module') { complete = false; continue; }
+      wanted.push({ src, url: url.href });
+    }
+
+    const got = await Promise.all(wanted.map(async ({ src, url }) => {
+      const body = await fetchText(url, ['force-cache', 'no-store'], false);
+      return body !== null && body.length <= MAX_SCRIPT_BYTES ? { src, body } : null;
+    }));
+
+    const assets = [];
+    let total = 0;
+    for (const a of got) {
+      if (!a || total + a.body.length > MAX_SCRIPTS_BYTES) { complete = false; continue; }
+      assets.push(a);
+      total += a.body.length;
+    }
+    return { assets, complete };
   }
 
   window.WCSource = { annotate, SourceMap, capturePageSource };

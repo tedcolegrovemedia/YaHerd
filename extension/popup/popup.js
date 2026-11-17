@@ -152,11 +152,11 @@ $('fb-start-btn').addEventListener('click', async () => {
     const cap = await captureTab(tab.id);
     const url = tab.href.split('#')[0];
     if (reviewId) {
-      await send({ type: 'api', method: 'POST', path: `/api/feedback/reviews/${reviewId}/pages`, body: { url, html: cap.html } });
+      await send({ type: 'api', method: 'POST', path: `/api/feedback/reviews/${reviewId}/pages`, body: { url, html: cap.html, assets: cap.assets || [] } });
     } else {
       await send({
         type: 'api', method: 'POST', path: `/api/feedback/projects/${$('fb-project').value}/reviews`,
-        body: { title, url, site_url: $('fb-site').value.trim(), html: cap.html },
+        body: { title, url, site_url: $('fb-site').value.trim(), html: cap.html, assets: cap.assets || [] },
       });
     }
     await send({ type: 'invalidateFeedback' });

@@ -105,6 +105,7 @@
         const cap = await window.WCSource.capturePageSource();
         html = cap.html;
         this.pendingHtml = html;
+        this.pendingAssets = cap.assets || [];
         this.capturedRendered = cap.rendered;
       }
       this.sourceMap = new window.WCSource.SourceMap(html);
@@ -117,9 +118,11 @@
       const res = await this.deps.api('POST', `/api/feedback/reviews/${this.review.id}/pages`, {
         url: location.href.split('#')[0],
         html: this.pendingHtml,
+        assets: this.pendingAssets || [],
       });
       this.page = { id: res.page_id };
       this.pendingHtml = null;
+      this.pendingAssets = null;
       this.deps.invalidate();
       return this.page;
     }
@@ -127,10 +130,11 @@
     async updateSnapshot() {
       const cap = await window.WCSource.capturePageSource();
       if (this.page) {
-        await this.deps.api('POST', `/api/feedback/pages/${this.page.id}/snapshot`, { html: cap.html });
+        await this.deps.api('POST', `/api/feedback/pages/${this.page.id}/snapshot`, { html: cap.html, assets: cap.assets || [] });
       }
       this.sourceMap = null;
       this.pendingHtml = this.page ? null : cap.html;
+      this.pendingAssets = this.page ? null : (cap.assets || []);
     }
 
     // ---------- pins ----------

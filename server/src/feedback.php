@@ -8,9 +8,22 @@
 const FEEDBACK_MAX_BYTES     = 5 * 1024 * 1024;
 const FEEDBACK_MAX_REDIRECTS = 5;
 const FEEDBACK_CODE_MAX_LINES = 80;
+// Scripts captured alongside a snapshot (see feedback_store_assets).
+const FEEDBACK_MAX_ASSET_BYTES  = 1024 * 1024;
+const FEEDBACK_MAX_ASSETS_BYTES = 3 * 1024 * 1024;
+const FEEDBACK_MAX_ASSETS       = 40;
 
 function feedback_snapshot_path(int $pageId): string {
     return UPLOAD_DIR . '/snapshots/' . $pageId . '.html';
+}
+
+function feedback_assets_path(int $pageId): string {
+    return UPLOAD_DIR . '/snapshots/' . $pageId . '.assets.json';
+}
+
+function feedback_delete_snapshot(int $pageId): void {
+    @unlink(feedback_snapshot_path($pageId));
+    @unlink(feedback_assets_path($pageId));
 }
 
 // Canonical form of a page URL for matching: lowercase scheme/host, no default
@@ -157,6 +170,67 @@ function feedback_store_snapshot(int $pageId, string $html): void {
     }
 }
 
+// Scripts the extension captured with the page, from the reviewer's logged-in
+// browser: [['src' => <src attribute exactly as written>, 'body' => <js>], ...].
+// The replay loads these from YaHerd instead of the student's site, because
+// the sandboxed frame has no cookies — bot protection (Cloudflare etc.) or a
+// login wall answers its requests with a challenge page, and the page's
+// dynamic content never renders. An empty list removes any stored set.
+function feedback_store_assets(int $pageId, array $assets): void {
+    $keep = [];
+    $total = 0;
+    foreach ($assets as $a) {
+        if (!is_array($a) || !isset($a['src'], $a['body']) || !is_string($a['src']) || !is_string($a['body'])) continue;
+        $src = trim($a['src']);
+        $len = strlen($a['body']);
+        if ($src === '' || strlen($src) > 2000 || $len > FEEDBACK_MAX_ASSET_BYTES) continue;
+        if ($total + $len > FEEDBACK_MAX_ASSETS_BYTES || count($keep) >= FEEDBACK_MAX_ASSETS) break;
+        $body = mb_check_encoding($a['body'], 'UTF-8') ? $a['body'] : mb_convert_encoding($a['body'], 'UTF-8', 'Windows-1252');
+        $keep[] = ['src' => $src, 'body' => $body];
+        $total += $len;
+    }
+    $file = feedback_assets_path($pageId);
+    if (!$keep) { @unlink($file); return; }
+    $dir = dirname($file);
+    if (!is_dir($dir)) mkdir($dir, 0775, true);
+    if (file_put_contents($file, json_encode($keep, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) === false) {
+        throw new RuntimeException('Couldn’t store the page’s scripts');
+    }
+}
+
+function feedback_snapshot_assets(int $pageId): array {
+    $file = feedback_assets_path($pageId);
+    if (!is_file($file)) return [];
+    $data = json_decode((string)file_get_contents($file), true);
+    return is_array($data) ? $data : [];
+}
+
+// The extension saved the page's rendered DOM rather than its original
+// source (see capturePageSource in extension/content/fb-source.js).
+function feedback_is_rendered_snapshot(string $src): bool {
+    return (bool)preg_match('/<html\b[^>]*\sdata-yaherd-snapshot\s*=\s*["\']?rendered/i', $src);
+}
+
+// Point <script src="..."> tags at captured copies. $urls maps the src
+// attribute as written in the source to the URL to load instead. Only
+// attribute values change, never line breaks, and this runs after
+// annotation, so data-lf-src line numbers are unaffected.
+function feedback_rewrite_script_srcs(string $html, array $urls): string {
+    if (!$urls) return $html;
+    return preg_replace_callback(
+        '/(<script\b[^>]*?\ssrc\s*=\s*)(?:"([^"]*)"|\'([^\']*)\'|([^\s>"\']+))/i',
+        function ($m) use ($urls) {
+            $raw = $m[2] ?? $m[3] ?? $m[4] ?? '';
+            $src = trim(html_entity_decode($raw, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+            return isset($urls[$src]) ? $m[1] . '"' . e($urls[$src]) . '"' : $m[0];
+        },
+        $html,
+        -1,
+        $count,
+        PREG_UNMATCHED_AS_NULL
+    ) ?? $html;
+}
+
 // Fetch $url server-side and store it as page $pageId's snapshot.
 // Returns ['final_url' => ..., 'title' => ?string].
 function feedback_take_snapshot(int $pageId, string $url): array {
@@ -274,8 +348,17 @@ function feedback_annotate(string $html): string {
 // The replay document: annotated snapshot + <base> (so the student's relative
 // CSS/images/scripts load from their site) + our overlay script, inlined so it
 // doesn't depend on the base URL.
-function feedback_render_frame(string $src, string $baseUrl, string $parentOrigin): string {
+function feedback_render_frame(string $src, string $baseUrl, string $parentOrigin, array $scriptUrls = []): string {
     $html = feedback_annotate($src);
+    if (feedback_is_rendered_snapshot($src)) {
+        // A copy of the page as it was on screen: its content is already
+        // built, so running its scripts again would build it twice (or fail
+        // and tear it down). The type we add comes first, and the first
+        // duplicate attribute wins, so this overrides any existing type.
+        $html = preg_replace('/<script\b/i', '<script type="text/yaherd-disabled"', $html);
+    } else {
+        $html = feedback_rewrite_script_srcs($html, $scriptUrls);
+    }
     $script = file_get_contents(dirname(__DIR__) . '/public/assets/lf-frame.js');
     $config = json_encode(['parentOrigin' => $parentOrigin], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG);
     $inject = '';
@@ -298,8 +381,8 @@ function feedback_render_frame(string $src, string $baseUrl, string $parentOrigi
 // Serve the replay with a sandbox CSP so the student's scripts run in an
 // opaque origin: no access to YaHerd cookies, storage or same-origin API calls,
 // even if someone opens the frame URL directly.
-function feedback_send_frame(array $page): never {
-    // $page is a feedback_pages row.
+function feedback_send_frame(array $page, string $token): never {
+    // $page is a feedback_pages row; $token the review's share token.
     $src = feedback_snapshot_source((int)$page['id']);
     if ($src === null) { http_response_code(404); exit('Snapshot missing'); }
     $isHttps = !empty($_SERVER['HTTPS']) || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
@@ -309,7 +392,26 @@ function feedback_send_frame(array $page): never {
     header('Content-Type: text/html; charset=utf-8');
     header('Cache-Control: private, no-store');
     header('Referrer-Policy: no-referrer');
-    echo feedback_render_frame($src, $page['final_url'], $parentOrigin);
+    // Absolute URLs: the frame's <base> is the student's site.
+    $scriptUrls = [];
+    foreach (feedback_snapshot_assets((int)$page['id']) as $i => $a) {
+        $scriptUrls[$a['src']] = $parentOrigin . '/f/' . $token . '/frame/' . (int)$page['id'] . '/asset/' . $i;
+    }
+    echo feedback_render_frame($src, $page['final_url'], $parentOrigin, $scriptUrls);
+    exit;
+}
+
+// One captured script, loaded by the replay frame (an opaque origin, hence
+// the CORS header — needed if the tag has a crossorigin attribute).
+function feedback_send_asset(array $page, int $index): never {
+    $assets = feedback_snapshot_assets((int)$page['id']);
+    if (!isset($assets[$index])) { http_response_code(404); exit('Not found'); }
+    header_remove('X-Frame-Options');
+    header('Content-Type: text/javascript; charset=utf-8');
+    header('Access-Control-Allow-Origin: *');
+    header('Cross-Origin-Resource-Policy: cross-origin');
+    header('Cache-Control: private, max-age=300');
+    echo $assets[$index]['body'];
     exit;
 }
 

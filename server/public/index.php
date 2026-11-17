@@ -92,8 +92,9 @@ $views = dirname(__DIR__) . '/views';
 
 // Public feedback links: no login. /f/<token> is the student view of a review;
 // /f/<token>/frame/<page id> is the sandboxed page replay it (and the editor)
-// embeds.
-if (preg_match('#^/f/([\w-]{32})(?:/frame/(\d+))?$#', $path, $m)) {
+// embeds; /f/<token>/frame/<page id>/asset/<n> serves a script captured with
+// that page's snapshot.
+if (preg_match('#^/f/([\w-]{32})(?:/frame/(\d+)(?:/asset/(\d+))?)?$#', $path, $m)) {
     $shareReview = feedback_review_by_token($m[1]);
     if (!$shareReview) { http_response_code(404); require $views . '/share_missing.php'; exit; }
     if (!empty($m[2])) {
@@ -101,7 +102,8 @@ if (preg_match('#^/f/([\w-]{32})(?:/frame/(\d+))?$#', $path, $m)) {
         $stmt->execute([(int)$m[2], (int)$shareReview['id']]);
         $framePage = $stmt->fetch();
         if (!$framePage) { http_response_code(404); exit('Not found'); }
-        feedback_send_frame($framePage);
+        if (isset($m[3]) && $m[3] !== '') feedback_send_asset($framePage, (int)$m[3]);
+        feedback_send_frame($framePage, $m[1]);
     }
     require $views . '/share.php';
     exit;
